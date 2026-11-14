@@ -7,7 +7,7 @@ import time
 
 st.set_page_config(page_title="Master RS & Sniper Entry Scanner", layout="wide")
 st.title("🦅 Full NSE - Premium Universe Sniper Scanner")
-st.write("Flow: 200-DMA & 10Cr Turnover -> MCap > 1000Cr -> Top 20% RS -> 🎯 Fresh Sniper Entry Tag & Sortable BO Dates")
+st.write("Flow: 200-DMA & 10Cr Turnover -> MCap > 1000Cr -> Top 20% RS -> 🎯 Sniper Entry Tag & Post-BO Max Drawdown")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -50,10 +50,12 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                     if cmp < 10: continue 
                     
                     sma_200 = float(df['Close'].rolling(window=200).mean().iloc[-1])
+                    
                     if cmp < sma_200: continue
                     
                     df['Avg_Vol_20'] = df['Volume'].shift(1).rolling(window=20).mean()
                     avg_vol_20 = float(df['Avg_Vol_20'].iloc[-1])
+                    
                     if (avg_vol_20 * cmp) < 100000000: continue
                         
                     sma_20 = float(df['Close'].rolling(window=20).mean().iloc[-1])
@@ -68,7 +70,8 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                     last_60 = df.tail(60)
                     low_days = last_60[last_60['Is_Low']]
                     
-                    # Exact Date Logic: Sirf pehli baar trigger hone wali date
+                    max_drawdown = 0.0
+                    
                     if not low_days.empty:
                         recent_low_date = low_days.index[-1]
                         subset = last_60.loc[recent_low_date:]
@@ -77,9 +80,22 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                         low_dt_obj = recent_low_date.date()
                         
                         if len(breakouts) > 0:
+                            bo_date = breakouts.index[0]
                             bo_price = breakouts['Prev_20D_High'].iloc[0]
-                            bo_dt_obj = breakouts.index[0].date()
+                            bo_dt_obj = bo_date.date()
                             bo_status = "✅ Triggered"
+                            
+                            # ==========================================
+                            # POST-BREAKOUT MAX DRAWDOWN CALCULATION
+                            # ==========================================
+                            post_bo_data = last_60.loc[bo_date:]
+                            min_post_bo_low = float(post_bo_data['Low'].min())
+                            # Drawdown is calculated from the BO price to the lowest low hit afterwards
+                            if min_post_bo_low < bo_price:
+                                max_drawdown = ((min_post_bo_low - bo_price) / bo_price) * 100
+                            else:
+                                max_drawdown = 0.0
+                                
                         else:
                             bo_price = float(df['Prev_20D_High'].iloc[-1])
                             bo_dt_obj = None
@@ -98,12 +114,10 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                     if (sma_20 > sma_50 > sma_200) and (recent_10d_low == low_20d):
                         if bo_status == "✅ Triggered":
                             dist_from_bo = ((cmp - bo_price) / bo_price) * 100
-                            # Tag only if price is within 5% of the FIRST breakout point
                             if dist_from_bo <= 5.0:  
                                 passes_pro_setup = True
                         elif bo_status == "⏳ Waiting":
                             dist_to_bo = ((bo_price - cmp) / cmp) * 100
-                            # Tag if waiting and within 5% of breaking out
                             if dist_to_bo <= 5.0:
                                 passes_pro_setup = True
                     
@@ -123,7 +137,8 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                         "Last 20D Low": low_dt_obj,
                         "BO Status": bo_status,
                         "Trigger Date": bo_dt_obj,
-                        "% From Entry": f"{round(dist_to_high, 2)}%",
+                        "Max Drawdown %": max_drawdown if bo_status == "✅ Triggered" else None,
+                        "% From Entry": dist_to_high,
                         "20 SMA": sma_20,
                         "50 SMA": sma_50,
                         "200 SMA": sma_200,
@@ -178,7 +193,7 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
             
             sniper_count = len(final_df[final_df['Entry Alert'] == "🎯 Sniper Entry"])
             
-            st.success(f"✅ {len(final_df)} Premium RS Leaders Found! ({sniper_count} Fresh '🎯 Sniper Entry' setups available)")
+            st.success(f"✅ {len(final_df)} Premium RS Leaders Found! ({sniper_count} Fresh '🎯 Sniper Entry' setups)")
             
             st.dataframe(
                 final_df.round(2), 
@@ -187,6 +202,8 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                 column_config={
                     "Last 20D Low": st.column_config.DateColumn("Last 20D Low", format="DD-MMM-YYYY"),
                     "Trigger Date": st.column_config.DateColumn("Trigger Date", format="DD-MMM-YYYY"),
+                    "Max Drawdown %": st.column_config.NumberColumn("Post-BO Drawdown", format="%.2f %%"),
+                    "% From Entry": st.column_config.NumberColumn("% From Entry", format="%.2f %%"),
                     "Chart": st.column_config.LinkColumn("📈 Chart", display_text="Open TV"),
                     "Fundamentals": st.column_config.LinkColumn("📊 Fundamentals", display_text="Screener"),
                     "MCap (Cr)": st.column_config.NumberColumn("MCap (Cr)", format="₹%d Cr")
