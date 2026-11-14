@@ -7,7 +7,7 @@ import time
 
 st.set_page_config(page_title="All NSE Breakout Scanner", layout="wide")
 st.title("🦅 All NSE Universe - First Breakout Scanner")
-st.write("Tracking Fresh 20D Breakouts, Volume Alerts, Top 20% RS & Market Cap > 1000 Cr.")
+st.write("Colab Logic Synced: 200-DMA Pre-Filter, 10Cr Turnover & True Uptrend RS.")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -28,21 +28,17 @@ if st.button("Start Full Market Scan (~2000 Stocks)"):
     tickers = get_all_nse()
     total_tickers = len(tickers)
     
-    # 200 ke chote batch taaki RAM full na ho aur hang na ho
     chunk_size = 200
     results = []
     
     for i in range(0, total_tickers, chunk_size):
         chunk = tickers[i:i + chunk_size]
-        status.text(f"Processing Batch {i//chunk_size + 1} of {(total_tickers//chunk_size) + 1} (Up to {min(i+chunk_size, total_tickers)} stocks)...")
+        status.text(f"Processing Batch {i//chunk_size + 1} of {(total_tickers//chunk_size) + 1}...")
         
-        # Download chunk
         data = yf.download(chunk, period="1y", interval="1d", group_by="ticker", progress=False, threads=True)
         
-        # Haath-o-haath chunk process karke memory free karna
         for t in chunk:
             try:
-                # Handle edge case if chunk has only 1 ticker
                 if len(chunk) == 1:
                     df = data.dropna(subset=['Close'])
                 else:
@@ -51,22 +47,26 @@ if st.button("Start Full Market Scan (~2000 Stocks)"):
                 
                 if len(df) > 200:
                     cmp = float(df['Close'].iloc[-1])
-                    if cmp < 10: continue # Penny stock filter
+                    if cmp < 10: continue
+                        
+                    sma_200 = float(df['Close'].rolling(window=200).mean().iloc[-1])
+                    
+                    # EXACT COLAB LOGIC 1: 200 DMA ke niche wale stocks yahin reject kar do
+                    if cmp < sma_200: continue
+                    
+                    df['Avg_Vol_20'] = df['Volume'].shift(1).rolling(window=20).mean()
+                    avg_vol_20 = float(df['Avg_Vol_20'].iloc[-1])
+                    
+                    # EXACT COLAB LOGIC 2: Turnover Filter > 10 Crore (100,000,000)
+                    if (avg_vol_20 * cmp) < 100000000: continue
                         
                     sma_20 = float(df['Close'].rolling(window=20).mean().iloc[-1])
                     sma_50 = float(df['Close'].rolling(window=50).mean().iloc[-1])
-                    sma_200 = float(df['Close'].rolling(window=200).mean().iloc[-1])
                     
                     df['Prev_20D_High'] = df['High'].shift(1).rolling(window=20).max()
                     df['Prev_20D_Low'] = df['Low'].shift(1).rolling(window=20).min()
-                    df['Avg_Vol_20'] = df['Volume'].shift(1).rolling(window=20).mean()
                     
                     latest_vol = float(df['Volume'].iloc[-1])
-                    avg_vol_20 = float(df['Avg_Vol_20'].iloc[-1])
-                    
-                    # Turnover filter (>2Cr)
-                    if (avg_vol_20 * cmp) < 20000000: continue
-                        
                     vol_alert = "🚀 High Vol" if latest_vol > (1.5 * avg_vol_20) else "-"
                     
                     df['Is_Low'] = df['Low'] <= df['Prev_20D_Low']
@@ -116,48 +116,28 @@ if st.button("Start Full Market Scan (~2000 Stocks)"):
                 pass
                 
         progress_bar.progress(min((i + chunk_size) / total_tickers, 1.0))
-        time.sleep(0.5) # Server ko saans lene ke liye aade second ka break
+        time.sleep(0.5)
         
-    status.text("Filtering Technicals & Fetching Market Cap (Sirf filtered stocks ka)...")
+    status.text("Applying Top 20% RS Filter...")
     
     if results:
         df_all = pd.DataFrame(results)
+        
+        # Ab RS calculation sirf un strong stocks mein hogi jo already 200-DMA aur 10Cr liquidity pass kar chuke hain
         df_all['3M RS'] = (df_all['3M Return %'].rank(pct=True) * 100)
         
-        # Pehle technical filters lagao taaki list choti ho jaye
-        pre_final = df_all[
+        final_df = df_all[
             (df_all['3M RS'] >= 80) & 
-            (df_all['Close'] > df_all['200 SMA']) & 
             (df_all['Close'] > df_all['20 SMA']) & 
             (df_all['20 SMA'] > df_all['50 SMA'])
         ]
         
-        # Market Cap > 1000 Cr filter (Sirf bache hue choti list par apply hoga)
-        final_list = []
-        for idx, row in pre_final.iterrows():
-            try:
-                tkr = yf.Ticker(row['Stock'] + ".NS")
-                mcap = tkr.fast_info['marketCap']
-                mcap_cr = mcap / 10000000
-                
-                if mcap_cr >= 1000:
-                    row_dict = row.to_dict()
-                    row_dict['MCap (Cr)'] = round(mcap_cr, 2)
-                    final_list.append(row_dict)
-            except Exception:
-                pass
-                
         status.empty()
         progress_bar.empty()
         
-        if final_list:
-            final_df = pd.DataFrame(final_list).sort_values(by="3M RS", ascending=False).drop(columns=['3M Return %'])
-            st.success(f"✅ {len(final_df)} Stocks Found! (Top 20% RS, 200-DMA & Market Cap > 1000 Cr Passed)")
-            
-            # Columns ko reorder kar rahe hain taaki MCap dikh sake
-            cols = final_df.columns.tolist()
-            cols.insert(1, cols.pop(cols.index('MCap (Cr)')))
-            final_df = final_df[cols]
+        if not final_df.empty:
+            final_df = final_df.sort_values(by="3M RS", ascending=False).drop(columns=['3M Return %'])
+            st.success(f"✅ {len(final_df)} Explosive Stocks Found! (Colab Logic perfectly Synced)")
             
             st.dataframe(
                 final_df.round(2), 
@@ -166,9 +146,8 @@ if st.button("Start Full Market Scan (~2000 Stocks)"):
                 column_config={
                     "Chart": st.column_config.LinkColumn("📈 Chart", display_text="Open TV"),
                     "Fundamentals": st.column_config.LinkColumn("📊 Fundamentals", display_text="Screener"),
-                    "% From Entry": st.column_config.NumberColumn("% From Entry", format="%.2f %%"),
-                    "MCap (Cr)": st.column_config.NumberColumn("MCap (Cr)", format="₹%d Cr")
+                    "% From Entry": st.column_config.NumberColumn("% From Entry", format="%.2f %%")
                 }
             )
         else:
-            st.warning("Aaj koi stock saare rules (aur Market Cap > 1000Cr) pass nahi kar paya.")
+            st.warning("Aaj koi stock saare rules pass nahi kar paya.")
