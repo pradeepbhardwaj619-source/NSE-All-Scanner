@@ -9,7 +9,7 @@ import time
 
 st.set_page_config(page_title="Premium Sniper Backtester", layout="wide")
 st.title("📊 Premium Universe Sniper Backtest")
-st.write("Rules: 200-DMA & 10Cr Turnover -> Top 20% RS -> 20D Pullback Breakout -> 10% TGT or 10% SL")
+st.write("Rules: 200-DMA & 10Cr Turnover -> Top 20% RS -> 20D Pullback Breakout -> 🎯 6% TGT or 🛡️ 20-Day Low SL")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -37,9 +37,6 @@ if st.button("Start Full Market Backtest (~4-5 Mins)"):
     end_date = datetime.datetime.today().strftime('%Y-%m-%d')
     backtest_start = pd.to_datetime("2024-09-01")
     
-    # ==========================================
-    # BATCH DOWNLOAD FIX (To Prevent Hanging)
-    # ==========================================
     close_list, high_list, low_list, vol_list = [], [], [], []
     chunk_size = 200
     total_tickers = len(tickers)
@@ -66,9 +63,8 @@ if st.button("Start Full Market Backtest (~4-5 Mins)"):
         except Exception:
             pass
         
-        # Smooth Progress Bar Update
         progress.progress(min(0.3 * ((i + chunk_size) / total_tickers), 0.3))
-        time.sleep(0.5) # Prevents Yahoo Finance from blocking us
+        time.sleep(0.5) 
         
     status.text("Step 2/4: Merging Data & Calculating True RS Matrix...")
     progress.progress(0.35)
@@ -84,11 +80,10 @@ if st.button("Start Full Market Backtest (~4-5 Mins)"):
     
     progress.progress(0.4)
     
-    # Calculate 3 Month rolling return for ALL stocks 
     roll_ret_63 = close_df.pct_change(periods=63)
     rs_matrix = roll_ret_63.rank(axis=1, pct=True) * 100
 
-    status.text("Step 3/4: Simulating Trades (Entry -> 10% TGT or 10% SL)...")
+    status.text("Step 3/4: Simulating Trades (Entry -> 6% TGT or 20D Low SL)...")
     progress.progress(0.6)
     
     all_trades = []
@@ -114,7 +109,6 @@ if st.button("Start Full Market Backtest (~4-5 Mins)"):
         df['SMA_50'] = df['Close'].rolling(50).mean()
         df['SMA_200'] = df['Close'].rolling(200).mean()
         
-        # 10 Crore Turnover Rule
         df['Turnover'] = df['Close'] * df['Volume'].shift(1).rolling(20).mean()
         
         df['Prev_20D_High'] = df['High'].shift(1).rolling(20).max()
@@ -131,19 +125,24 @@ if st.button("Start Full Market Backtest (~4-5 Mins)"):
         
         for date, row in df_backtest.iterrows():
             if not in_trade:
-                # 1. Strict Liquidity & Trend (Turnover > 10Cr & Price > 200DMA)
                 if row['Close'] > row['SMA_200'] and row['Turnover'] > 100000000:
-                    # 2. Sniper Setups Only: RS > 80, 20>50>200, touched 20D low, breaks 20D high
                     if row['RS'] >= 80 and row['SMA_20'] > row['SMA_50'] > row['SMA_200']:
                         if row['Recent_10D_Low'] == row['Prev_20D_Low']:
                             if row['High'] >= row['Prev_20D_High'] and row['Prev_20D_High'] > row['SMA_20']:
                                 in_trade = True
                                 entry_date = date
                                 entry_price = row['Prev_20D_High'] 
-                                target_price = entry_price * 1.10  # 10% Target
-                                sl_price = entry_price * 0.90      # 10% Stop Loss
+                                
+                                # ==========================================
+                                # MODIFIED LOGIC: 6% Target & 20-Day Low SL
+                                # ==========================================
+                                target_price = entry_price * 1.06               # 6% Target
+                                sl_price = float(row['Prev_20D_Low'])           # Exact 20-Day Low
+                                
+                                # Safety fallback agar koi data glitch ho
+                                if sl_price >= entry_price:
+                                    sl_price = entry_price * 0.90
             else:
-                # In Trade: Check for Exit
                 exit_price = 0.0
                 exit_date = date
                 trade_result = ""
