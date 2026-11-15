@@ -7,7 +7,7 @@ import time
 
 st.set_page_config(page_title="Master RS & Sniper Entry Scanner", layout="wide")
 st.title("🦅 Full NSE - Premium Universe Sniper Scanner")
-st.write("Flow: 200-DMA & 10Cr -> Strict MCap > 2000Cr -> Top 20% RS -> Sector Leadership & 🎯 Sniper Entry")
+st.write("Flow: 200-DMA & 10Cr -> Strict MCap > 2000Cr -> Top 20% RS -> Sector Leadership, Vol Alerts & 🎯 Sniper Entry")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -183,13 +183,9 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                 
         df_all['RS Trend (1W)'] = df_all['RS 1W Chg'].apply(format_trend)
         
-        # Strictly Top 20% RS Only
         final_df = df_all[df_all['3M RS'] >= 80].copy()
         
         if not final_df.empty:
-            # ==========================================
-            # STEP 4: FETCH SECTORS FOR FINAL LEADERS
-            # ==========================================
             sectors = []
             total_final = len(final_df)
             for idx, (_, row) in enumerate(final_df.iterrows()):
@@ -216,28 +212,47 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
             st.success(f"✅ {len(final_df)} Ultra-Premium Leaders Found! ({sniper_count} Fresh '🎯 Sniper Entry' setups)")
             
             # ==========================================
-            # 📊 SECTOR LEADERSHIP & AVOIDANCE SUMMARY
+            # 📊 NEW SECTOR SUMMARY (WITH SNIPERS & VOL ALERTS)
             # ==========================================
-            sector_groups = final_df.groupby('Sector')['Stock'].apply(list).reset_index()
-            sector_groups['Count'] = sector_groups['Stock'].apply(len)
-            sector_groups = sector_groups.sort_values(by='Count', ascending=False)
+            sector_stats = []
+            for sec, group in final_df.groupby('Sector'):
+                total = len(group)
+                stocks = group['Stock'].tolist()
+                snipers = group[group['Entry Alert'] == '🎯 Sniper Entry']['Stock'].tolist()
+                high_vol_count = len(group[group['Vol Alert'] == '🚀 High Vol'])
+                
+                sector_stats.append({
+                    'Sector': sec,
+                    'Count': total,
+                    'Stocks': stocks,
+                    'Sniper_List': snipers,
+                    'HighVol_Count': high_vol_count
+                })
+                
+            sector_df = pd.DataFrame(sector_stats).sort_values(by='Count', ascending=False)
             
-            top_sector = sector_groups.iloc[0]['Sector']
-            top_count = sector_groups.iloc[0]['Count']
+            top_sector = sector_df.iloc[0]['Sector']
+            top_count = sector_df.iloc[0]['Count']
             
             st.subheader(f"📊 Sector Leadership: Highest number of stocks ({top_count}) are from {top_sector}")
             
-            with st.expander("🔍 View Complete Sector Breakdown & Weak Sectors (< 3 Stocks to Avoid)", expanded=True):
+            with st.expander("🔍 View Complete Sector Breakdown (Snipers 🎯 & High Vol 🚀)", expanded=True):
                 col1, col2 = st.columns(2)
                 
-                strong_sectors = sector_groups[sector_groups['Count'] >= 3]
-                weak_sectors = sector_groups[sector_groups['Count'] < 3]
+                strong_sectors = sector_df[sector_df['Count'] >= 3]
+                weak_sectors = sector_df[sector_df['Count'] < 3]
                 
                 with col1:
                     st.markdown("**🔥 Leading Sectors (3 or more stocks):**")
                     if not strong_sectors.empty:
                         for _, s_row in strong_sectors.iterrows():
-                            st.write(f"- **{s_row['Count']} stocks** are from **{s_row['Sector']}**")
+                            text = f"- **{s_row['Count']} stocks** from **{s_row['Sector']}**"
+                            if s_row['HighVol_Count'] > 0:
+                                text += f" *(Incl. {s_row['HighVol_Count']} High Vol 🚀 setups)*"
+                            if len(s_row['Sniper_List']) > 0:
+                                snipers_str = ", ".join(s_row['Sniper_List'])
+                                text += f"  ➔ **🎯 Snipers:** `{snipers_str}`"
+                            st.write(text)
                     else:
                         st.write("- Koi bhi sector 3+ stocks ke sath lead nahi kar raha.")
                         
@@ -245,8 +260,13 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                     st.markdown("**⚠️ Weak / Isolated Sectors (< 3 stocks - Avoid):**")
                     if not weak_sectors.empty:
                         for _, w_row in weak_sectors.iterrows():
-                            stock_names = ", ".join(w_row['Stock'])
-                            st.write(f"- **{w_row['Count']} stock(s)** from **{w_row['Sector']}**: `{stock_names}`")
+                            stock_names = ", ".join(w_row['Stocks'])
+                            text = f"- **{w_row['Count']} stock(s)** from **{w_row['Sector']}**: `{stock_names}`"
+                            # Incase koi sniper weak sector me fas gaya ho, alert de do
+                            if len(w_row['Sniper_List']) > 0:
+                                snipers_str = ", ".join(w_row['Sniper_List'])
+                                text += f" *(Has Sniper: {snipers_str} 🎯)*"
+                            st.write(text)
                     else:
                         st.write("- Koi weak sector nahi hai.")
             
