@@ -7,7 +7,7 @@ import time
 
 st.set_page_config(page_title="Master RS & Sniper Entry Scanner", layout="wide")
 st.title("🦅 Full NSE - Premium Universe Sniper Scanner")
-st.write("Flow: 200-DMA & 10Cr -> Strict MCap > 2000Cr -> Top 20% RS -> 🎯 Sniper Entry")
+st.write("Flow: 200-DMA & 10Cr -> Strict MCap > 2000Cr -> Top 20% RS -> Sector Leadership & 🎯 Sniper Entry")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -33,7 +33,7 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
     
     for i in range(0, total_tickers, chunk_size):
         chunk = tickers[i:i + chunk_size]
-        status.text(f"Step 1/3: Filtering 200-DMA & 10Cr Turnover - Batch {i//chunk_size + 1}...")
+        status.text(f"Step 1/4: Filtering 200-DMA & 10Cr Turnover - Batch {i//chunk_size + 1}...")
         
         data = yf.download(chunk, period="1y", interval="1d", group_by="ticker", progress=False, threads=True)
         
@@ -146,30 +146,25 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
             except Exception:
                 pass
                 
-        progress_bar.progress(min((i + chunk_size) / total_tickers, 0.6))
+        progress_bar.progress(min((i + chunk_size) / total_tickers, 0.5))
         time.sleep(0.5)
         
     stage2_results = []
     total_stage1 = len(stage1_results)
     
     for idx, row in enumerate(stage1_results):
-        status.text(f"Step 2/3: Checking Market Cap for {total_stage1} strong stocks ({idx+1}/{total_stage1})...")
+        status.text(f"Step 2/4: Checking Market Cap (> 2000 Cr) for {total_stage1} stocks ({idx+1}/{total_stage1})...")
         try:
             tkr = yf.Ticker(row['Stock'] + ".NS")
             mcap_cr = tkr.fast_info['marketCap'] / 10000000
-            
-            # ==========================================
-            # 🛡️ UPDATED RULE: STRICTLY > 2000 CR MARKET CAP
-            # ==========================================
             if mcap_cr >= 2000:
                 row['MCap (Cr)'] = round(mcap_cr, 2)
                 stage2_results.append(row)
         except Exception:
             pass
-        progress_bar.progress(0.6 + (0.3 * ((idx + 1) / total_stage1)))
+        progress_bar.progress(0.5 + (0.25 * ((idx + 1) / total_stage1)))
         
-    status.text("Step 3/3: Calculating True Premium RS, Momentum Trends & Tagging Sniper Entries...")
-    progress_bar.progress(1.0)
+    status.text("Step 3/4: Calculating True Premium RS & Momentum Trends...")
     
     if stage2_results:
         df_all = pd.DataFrame(stage2_results)
@@ -191,24 +186,80 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
         # Strictly Top 20% RS Only
         final_df = df_all[df_all['3M RS'] >= 80].copy()
         
-        status.empty()
-        progress_bar.empty()
-        
         if not final_df.empty:
+            # ==========================================
+            # STEP 4: FETCH SECTORS FOR FINAL LEADERS
+            # ==========================================
+            sectors = []
+            total_final = len(final_df)
+            for idx, (_, row) in enumerate(final_df.iterrows()):
+                status.text(f"Step 4/4: Fetching Sector Data for {total_final} Leaders ({idx+1}/{total_final})...")
+                try:
+                    info = yf.Ticker(row['Stock'] + ".NS").info
+                    sec = info.get('sector', 'Other')
+                    if not sec:
+                        sec = 'Other'
+                except Exception:
+                    sec = 'Other'
+                sectors.append(sec)
+                progress_bar.progress(0.75 + (0.25 * ((idx + 1) / total_final)))
+                
+            final_df['Sector'] = sectors
+            
+            status.empty()
+            progress_bar.empty()
+            
             final_df['Entry Alert'] = final_df['Passes Setup'].apply(lambda x: "🎯 Sniper Entry" if x else "-")
             final_df = final_df.sort_values(by="3M RS", ascending=False)
             
+            sniper_count = len(final_df[final_df['Entry Alert'] == "🎯 Sniper Entry"])
+            st.success(f"✅ {len(final_df)} Ultra-Premium Leaders Found! ({sniper_count} Fresh '🎯 Sniper Entry' setups)")
+            
+            # ==========================================
+            # 📊 SECTOR LEADERSHIP & AVOIDANCE SUMMARY
+            # ==========================================
+            sector_groups = final_df.groupby('Sector')['Stock'].apply(list).reset_index()
+            sector_groups['Count'] = sector_groups['Stock'].apply(len)
+            sector_groups = sector_groups.sort_values(by='Count', ascending=False)
+            
+            top_sector = sector_groups.iloc[0]['Sector']
+            top_count = sector_groups.iloc[0]['Count']
+            
+            st.subheader(f"📊 Sector Leadership: Highest number of stocks ({top_count}) are from {top_sector}")
+            
+            with st.expander("🔍 View Complete Sector Breakdown & Weak Sectors (< 3 Stocks to Avoid)", expanded=True):
+                col1, col2 = st.columns(2)
+                
+                strong_sectors = sector_groups[sector_groups['Count'] >= 3]
+                weak_sectors = sector_groups[sector_groups['Count'] < 3]
+                
+                with col1:
+                    st.markdown("**🔥 Leading Sectors (3 or more stocks):**")
+                    if not strong_sectors.empty:
+                        for _, s_row in strong_sectors.iterrows():
+                            st.write(f"- **{s_row['Count']} stocks** are from **{s_row['Sector']}**")
+                    else:
+                        st.write("- Koi bhi sector 3+ stocks ke sath lead nahi kar raha.")
+                        
+                with col2:
+                    st.markdown("**⚠️ Weak / Isolated Sectors (< 3 stocks - Avoid):**")
+                    if not weak_sectors.empty:
+                        for _, w_row in weak_sectors.iterrows():
+                            stock_names = ", ".join(w_row['Stock'])
+                            st.write(f"- **{w_row['Count']} stock(s)** from **{w_row['Sector']}**: `{stock_names}`")
+                    else:
+                        st.write("- Koi weak sector nahi hai.")
+            
+            # Clean up columns for Main Table
             final_df = final_df.drop(columns=['3M Return %', '3M Return 1W Ago %', '3M RS 1W Ago', 'RS 1W Chg', 'Passes Setup'])
             
             cols = final_df.columns.tolist()
-            cols.insert(1, cols.pop(cols.index('MCap (Cr)')))
-            cols.insert(2, cols.pop(cols.index('Entry Alert')))
+            cols.insert(1, cols.pop(cols.index('Sector')))
+            cols.insert(2, cols.pop(cols.index('MCap (Cr)')))
+            cols.insert(3, cols.pop(cols.index('Entry Alert')))
             cols.insert(cols.index('3M RS') + 1, cols.pop(cols.index('RS Trend (1W)')))
             cols.insert(cols.index('20 SMA'), cols.pop(cols.index('Dist from 52W High %')))
             final_df = final_df[cols]
-            
-            sniper_count = len(final_df[final_df['Entry Alert'] == "🎯 Sniper Entry"])
-            st.success(f"✅ {len(final_df)} Ultra-Premium Leaders Found! ({sniper_count} Fresh '🎯 Sniper Entry' setups)")
             
             st.dataframe(
                 final_df.round(2), 
@@ -226,6 +277,6 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                 }
             )
         else:
-            st.warning("Aaj Ultra-Premium Universe में कोई स्टॉक टॉप क्राइटेरिया पास नहीं कर पाया।")
+            st.warning("Aaj Ultra-Premium Universe mein koi stock top criteria pass nahi kar paya.")
     else:
-        st.error("Market data fetch करने में एरर आई।")
+        st.error("Market data fetch karne mein error aayi.")
