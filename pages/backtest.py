@@ -3,6 +3,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import datetime
+import requests
+import io
 
 st.set_page_config(page_title="Nifty 500 Sniper Backtester", layout="wide")
 st.title("📊 Nifty 500 Sniper Backtest (Sept 2024 - Present)")
@@ -10,9 +12,11 @@ st.write("Rules: Top 20% RS + 20D Pullback Breakout -> 10% Target or 10% Stop Lo
 
 @st.cache_data(ttl=86400)
 def get_nifty_500():
-    # Fetching Nifty 500 from Wikipedia to bypass NSE blocks
+    # Fetching Nifty 500 from Wikipedia with proper User-Agent to avoid 403 Forbidden
     url = "https://en.wikipedia.org/wiki/NIFTY_500"
-    tables = pd.read_html(url)
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    response = requests.get(url, headers=headers)
+    tables = pd.read_html(io.StringIO(response.text))
     df = tables[2] # The 3rd table on the page contains the constituents
     return [str(sym).strip() + ".NS" for sym in df['Symbol'].tolist()]
 
