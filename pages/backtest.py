@@ -9,7 +9,7 @@ import time
 
 st.set_page_config(page_title="Premium Sniper Backtester", layout="wide")
 st.title("📊 Premium Universe Sniper Backtest")
-st.write("Rules: 200-DMA & 10Cr -> Top 20% RS -> 20D Pullback -> Breaks 20D High -> Select TGT or 20D Low SL")
+st.write("Rules: 200-DMA & 10Cr -> Top 20% RS -> 20D Pullback -> Breaks 20D High -> Custom TGT & Custom SL")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -23,11 +23,30 @@ def get_all_nse():
         df = df[df['SERIES'].str.strip() == 'EQ']
     return [str(sym).strip() + ".NS" for sym in df['SYMBOL'].tolist()]
 
-# Dropdown for multiple profit booking targets
-target_choice = st.selectbox("🎯 Select Profit Booking Target:", ["6%", "8%", "10%"])
-target_multiplier = {"6%": 1.06, "8%": 1.08, "10%": 1.10}[target_choice]
+# ==========================================
+# 🎛️ CUSTOM DROPDOWNS FOR TARGET & SL 
+# ==========================================
+st.markdown("### ⚙️ Strategy Settings")
+col1, col2 = st.columns(2)
 
-if st.button(f"Start Backtest with {target_choice} Target (~4-5 Mins)"):
+with col1:
+    target_choice = st.selectbox(
+        "🎯 Select Profit Target:", 
+        ["6%", "8%", "10%", "12%", "15%"], 
+        index=1
+    )
+    target_multiplier = {"6%": 1.06, "8%": 1.08, "10%": 1.10, "12%": 1.12, "15%": 1.15}[target_choice]
+
+with col2:
+    sl_choice = st.selectbox(
+        "🛡️ Select Stop Loss Logic:", 
+        ["Smart SL (Max -10%)", "Smart SL (Max -15%)", "Fixed -8%", "Fixed -10%"], 
+        index=1
+    )
+
+st.divider()
+
+if st.button(f"Start Backtest (~4-5 Mins)"):
     status = st.empty()
     progress = st.progress(0)
     
@@ -87,7 +106,7 @@ if st.button(f"Start Backtest with {target_choice} Target (~4-5 Mins)"):
     roll_ret_63 = close_df.pct_change(periods=63)
     rs_matrix = roll_ret_63.rank(axis=1, pct=True) * 100
 
-    status.text(f"Step 3/4: Simulating Trades (Entry -> {target_choice} TGT or 20D Low SL)...")
+    status.text("Step 3/4: Simulating Trades with Custom Settings...")
     progress.progress(0.6)
     
     all_trades = []
@@ -112,10 +131,8 @@ if st.button(f"Start Backtest with {target_choice} Target (~4-5 Mins)"):
         df['SMA_20'] = df['Close'].rolling(20).mean()
         df['SMA_50'] = df['Close'].rolling(50).mean()
         df['SMA_200'] = df['Close'].rolling(200).mean()
-        
         df['Turnover'] = df['Close'] * df['Volume'].shift(1).rolling(20).mean()
         
-        # PROVEN LOGIC: 20-Day High Breakout
         df['Prev_20D_High'] = df['High'].shift(1).rolling(20).max()
         df['Prev_20D_Low'] = df['Low'].shift(1).rolling(20).min()
         df['Recent_10D_Low'] = df['Low'].rolling(10).min()
@@ -125,6 +142,7 @@ if st.button(f"Start Backtest with {target_choice} Target (~4-5 Mins)"):
         entry_date = None
         target_price = 0.0
         sl_price = 0.0
+        initial_risk_pct = 0.0
         
         df_backtest = df[df.index >= backtest_start]
         
@@ -132,19 +150,33 @@ if st.button(f"Start Backtest with {target_choice} Target (~4-5 Mins)"):
             if not in_trade:
                 if row['Close'] > row['SMA_200'] and row['Turnover'] > 100000000:
                     if row['RS'] >= 80 and row['SMA_20'] > row['SMA_50'] > row['SMA_200']:
-                        # Pullback confirm
                         if row['Recent_10D_Low'] == row['Prev_20D_Low']:
-                            # Breakout confirm (STRICT 20-DAY HIGH)
                             if row['High'] >= row['Prev_20D_High'] and row['Prev_20D_High'] > row['SMA_20']:
                                 in_trade = True
                                 entry_date = date
                                 entry_price = row['Prev_20D_High'] 
                                 
+                                # Set Target
                                 target_price = entry_price * target_multiplier
-                                sl_price = float(row['Prev_20D_Low'])           
                                 
+                                # Set Stop Loss based on Dropdown Choice
+                                raw_20d_low = float(row['Prev_20D_Low'])
+                                
+                                if sl_choice == "Smart SL (Max -10%)":
+                                    sl_price = max(raw_20d_low, entry_price * 0.90)
+                                elif sl_choice == "Smart SL (Max -15%)":
+                                    sl_price = max(raw_20d_low, entry_price * 0.85)
+                                elif sl_choice == "Fixed -8%":
+                                    sl_price = entry_price * 0.92
+                                elif sl_choice == "Fixed -10%":
+                                    sl_price = entry_price * 0.90
+                                
+                                # Failsafe
                                 if sl_price >= entry_price:
                                     sl_price = entry_price * 0.90
+                                    
+                                initial_risk_pct = ((sl_price - entry_price) / entry_price) * 100
+
             else:
                 exit_price = 0.0
                 exit_date = date
@@ -169,6 +201,7 @@ if st.button(f"Start Backtest with {target_choice} Target (~4-5 Mins)"):
                         "Exit Price": round(exit_price, 2),
                         "Result": trade_result,
                         "PnL %": round(pnl_pct, 2),
+                        "Initial Risk %": round(initial_risk_pct, 2),
                         "Days Held": days_held
                     })
                     
@@ -185,7 +218,7 @@ if st.button(f"Start Backtest with {target_choice} Target (~4-5 Mins)"):
         win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
         avg_days = trades_df['Days Held'].mean()
         
-        st.success(f"✅ {target_choice} Target & 20D Low SL Backtest Completed!")
+        st.success(f"✅ Backtest Completed Successfully!")
         
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Trades", total_trades)
