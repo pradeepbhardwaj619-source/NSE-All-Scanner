@@ -16,8 +16,16 @@ def get_nifty_500():
     headers = {'User-Agent': 'Mozilla/5.0'}
     res = requests.get(url, headers=headers)
     df = pd.read_csv(io.StringIO(res.text))
-    # Nifty 500 CSV uses 'Symbol' column
-    return [str(sym).strip() + ".NS" for sym in df['Symbol'].tolist()]
+    
+    # Handle variations in NSE CSV column names
+    if 'Symbol' in df.columns:
+        return [str(sym).strip() + ".NS" for sym in df['Symbol'].tolist()]
+    elif 'SYMBOL' in df.columns:
+        return [str(sym).strip() + ".NS" for sym in df['SYMBOL'].tolist()]
+    else:
+        # Fallback if both are missing
+        st.error(f"Error reading NSE file. Columns found: {df.columns.tolist()}")
+        st.stop()
 
 if st.button("Start Nifty 500 Backtest (~1-2 Mins)"):
     status = st.empty()
