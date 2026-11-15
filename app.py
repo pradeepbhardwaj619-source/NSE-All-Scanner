@@ -7,7 +7,7 @@ import time
 
 st.set_page_config(page_title="Master RS & Sniper Entry Scanner", layout="wide")
 st.title("🦅 Full NSE - Premium Universe Sniper Scanner")
-st.write("Flow: 200-DMA & 10Cr Turnover -> MCap > 1000Cr -> Top 20% RS -> 🎯 Sniper Entry Tag & Post-BO Max Drawdown")
+st.write("Flow: 200-DMA & 10Cr -> MCap > 1000Cr -> Top 20% RS (w/ Base Builder Exception) -> 🎯 Sniper Entry")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -50,16 +50,18 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                     if cmp < 10: continue 
                     
                     sma_200 = float(df['Close'].rolling(window=200).mean().iloc[-1])
-                    
                     if cmp < sma_200: continue
                     
                     df['Avg_Vol_20'] = df['Volume'].shift(1).rolling(window=20).mean()
                     avg_vol_20 = float(df['Avg_Vol_20'].iloc[-1])
-                    
                     if (avg_vol_20 * cmp) < 100000000: continue
                         
                     sma_20 = float(df['Close'].rolling(window=20).mean().iloc[-1])
                     sma_50 = float(df['Close'].rolling(window=50).mean().iloc[-1])
+                    
+                    # 52-Week High Calculation
+                    high_52w = float(df['High'].max())
+                    dist_from_52w_high = ((high_52w - cmp) / high_52w) * 100
                     
                     df['Prev_20D_High'] = df['High'].shift(1).rolling(window=20).max()
                     df['Prev_20D_Low'] = df['Low'].shift(1).rolling(window=20).min()
@@ -71,7 +73,6 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                     low_days = last_60[last_60['Is_Low']]
                     
                     max_drawdown = 0.0
-                    
                     if not low_days.empty:
                         recent_low_date = low_days.index[-1]
                         subset = last_60.loc[recent_low_date:]
@@ -85,17 +86,10 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                             bo_dt_obj = bo_date.date()
                             bo_status = "✅ Triggered"
                             
-                            # ==========================================
-                            # POST-BREAKOUT MAX DRAWDOWN CALCULATION
-                            # ==========================================
                             post_bo_data = last_60.loc[bo_date:]
                             min_post_bo_low = float(post_bo_data['Low'].min())
-                            # Drawdown is calculated from the BO price to the lowest low hit afterwards
                             if min_post_bo_low < bo_price:
                                 max_drawdown = ((min_post_bo_low - bo_price) / bo_price) * 100
-                            else:
-                                max_drawdown = 0.0
-                                
                         else:
                             bo_price = float(df['Prev_20D_High'].iloc[-1])
                             bo_dt_obj = None
@@ -106,7 +100,6 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                         bo_dt_obj = None
                         bo_status = "❌ No Low"
                     
-                    # SNIPER SETUP LOGIC (Anti-Overextended Rule)
                     low_20d = float(df['Low'].tail(20).min())
                     recent_10d_low = float(df['Low'].tail(10).min())
                     
@@ -123,15 +116,21 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                     
                     latest_vol = float(df['Volume'].iloc[-1])
                     vol_alert = "🚀 High Vol" if latest_vol > (1.5 * avg_vol_20) else "-"
-                    
                     dist_to_high = ((bo_price - cmp) / cmp) * 100 if bo_status == "⏳ Waiting" else ((cmp - bo_price) / bo_price) * 100
-                    ret_3m = ((cmp - float(df['Close'].iloc[-63])) / float(df['Close'].iloc[-63])) * 100
+                    
+                    ret_3m = ((cmp - float(df['Close'].iloc[-64])) / float(df['Close'].iloc[-64])) * 100
+                    cmp_1w_ago = float(df['Close'].iloc[-6])
+                    base_1w_ago = float(df['Close'].iloc[-69])
+                    ret_3m_1w_ago = ((cmp_1w_ago - base_1w_ago) / base_1w_ago) * 100
+                    
                     symbol_clean = t.replace(".NS", "")
                     
                     stage1_results.append({
                         "Stock": symbol_clean,
                         "Close": cmp,
+                        "Dist from 52W High %": dist_from_52w_high,
                         "3M Return %": ret_3m,
+                        "3M Return 1W Ago %": ret_3m_1w_ago,
                         "Passes Setup": passes_pro_setup,
                         "Vol Alert": vol_alert,
                         "Last 20D Low": low_dt_obj,
@@ -159,41 +158,63 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
         try:
             tkr = yf.Ticker(row['Stock'] + ".NS")
             mcap_cr = tkr.fast_info['marketCap'] / 10000000
-            
             if mcap_cr >= 1000:
                 row['MCap (Cr)'] = round(mcap_cr, 2)
                 stage2_results.append(row)
         except Exception:
             pass
-        
         progress_bar.progress(0.6 + (0.3 * ((idx + 1) / total_stage1)))
         
-    status.text("Step 3/3: Calculating True Premium RS & Tagging Sniper Entries...")
+    status.text("Step 3/3: Calculating True Premium RS, Momentum Trends & Tagging Sniper Entries...")
     progress_bar.progress(1.0)
     
     if stage2_results:
         df_all = pd.DataFrame(stage2_results)
-        df_all['3M RS'] = (df_all['3M Return %'].rank(pct=True) * 100)
         
-        final_df = df_all[df_all['3M RS'] >= 80].copy()
+        # RS Rankings
+        df_all['3M RS'] = (df_all['3M Return %'].rank(pct=True) * 100)
+        df_all['3M RS 1W Ago'] = (df_all['3M Return 1W Ago %'].rank(pct=True) * 100)
+        df_all['RS 1W Chg'] = df_all['3M RS'] - df_all['3M RS 1W Ago']
+        
+        def format_trend(val):
+            if val > 0:
+                return f"📈 +{round(val, 1)}"
+            elif val < 0:
+                return f"📉 {round(val, 1)}"
+            else:
+                return "➖ 0.0"
+                
+        df_all['RS Trend (1W)'] = df_all['RS 1W Chg'].apply(format_trend)
+        
+        # ==========================================
+        # 🎯 THE MAGIC FIX: "Base Builder" Exception Rule
+        # ==========================================
+        is_leader = df_all['3M RS'] >= 80
+        # If RS drops down to 65, but it is within 15% of 52W High (tight base), keep it!
+        is_base_builder = (df_all['3M RS'] >= 65) & (df_all['Dist from 52W High %'] <= 15.0)
+        
+        final_df = df_all[is_leader | is_base_builder].copy()
         
         status.empty()
         progress_bar.empty()
         
         if not final_df.empty:
             final_df['Entry Alert'] = final_df['Passes Setup'].apply(lambda x: "🎯 Sniper Entry" if x else "-")
-            
             final_df = final_df.sort_values(by="3M RS", ascending=False)
-            final_df = final_df.drop(columns=['3M Return %', 'Passes Setup'])
+            
+            final_df = final_df.drop(columns=['3M Return %', '3M Return 1W Ago %', '3M RS 1W Ago', 'RS 1W Chg', 'Passes Setup'])
             
             cols = final_df.columns.tolist()
             cols.insert(1, cols.pop(cols.index('MCap (Cr)')))
             cols.insert(2, cols.pop(cols.index('Entry Alert')))
+            cols.insert(cols.index('3M RS') + 1, cols.pop(cols.index('RS Trend (1W)')))
+            
+            # Show Dist from 52W High near the end
+            cols.insert(cols.index('20 SMA'), cols.pop(cols.index('Dist from 52W High %')))
             final_df = final_df[cols]
             
             sniper_count = len(final_df[final_df['Entry Alert'] == "🎯 Sniper Entry"])
-            
-            st.success(f"✅ {len(final_df)} Premium RS Leaders Found! ({sniper_count} Fresh '🎯 Sniper Entry' setups)")
+            st.success(f"✅ {len(final_df)} Premium Leaders Found! ({sniper_count} Fresh '🎯 Sniper Entry' setups)")
             
             st.dataframe(
                 final_df.round(2), 
@@ -202,6 +223,7 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                 column_config={
                     "Last 20D Low": st.column_config.DateColumn("Last 20D Low", format="DD-MMM-YYYY"),
                     "Trigger Date": st.column_config.DateColumn("Trigger Date", format="DD-MMM-YYYY"),
+                    "Dist from 52W High %": st.column_config.NumberColumn("Dist from 52W High", format="%.2f %%"),
                     "Max Drawdown %": st.column_config.NumberColumn("Post-BO Drawdown", format="%.2f %%"),
                     "% From Entry": st.column_config.NumberColumn("% From Entry", format="%.2f %%"),
                     "Chart": st.column_config.LinkColumn("📈 Chart", display_text="Open TV"),
@@ -210,6 +232,6 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                 }
             )
         else:
-            st.warning("Aaj Premium Universe में कोई स्टॉक टॉप RS क्राइटेरिया पास नहीं कर पाया।")
+            st.warning("Aaj Premium Universe mein कोई स्टॉक टॉप क्राइटेरिया पास नहीं कर पाया।")
     else:
         st.error("Market data fetch करने में एरर आई।")
