@@ -5,6 +5,7 @@ import numpy as np
 import datetime
 import requests
 import io
+import time
 
 st.set_page_config(page_title="Premium Sniper Backtester", layout="wide")
 st.title("📊 Premium Universe Sniper Backtest")
@@ -12,7 +13,6 @@ st.write("Rules: 200-DMA & 10Cr Turnover -> Top 20% RS -> 20D Pullback Breakout 
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
-    # EXACT same robust function that works perfectly in your app.py
     url = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
     headers = {'User-Agent': 'Mozilla/5.0'}
     res = requests.get(url, headers=headers)
@@ -23,7 +23,7 @@ def get_all_nse():
         df = df[df['SERIES'].str.strip() == 'EQ']
     return [str(sym).strip() + ".NS" for sym in df['SYMBOL'].tolist()]
 
-if st.button("Start Full Market Backtest (~3-4 Mins)"):
+if st.button("Start Full Market Backtest (~4-5 Mins)"):
     status = st.empty()
     progress = st.progress(0)
     
@@ -37,22 +37,51 @@ if st.button("Start Full Market Backtest (~3-4 Mins)"):
     end_date = datetime.datetime.today().strftime('%Y-%m-%d')
     backtest_start = pd.to_datetime("2024-09-01")
     
-    status.text(f"Step 1/4: Downloading Daily Data for {len(tickers)} Stocks...")
-    progress.progress(0.2)
+    # ==========================================
+    # BATCH DOWNLOAD FIX (To Prevent Hanging)
+    # ==========================================
+    close_list, high_list, low_list, vol_list = [], [], [], []
+    chunk_size = 200
+    total_tickers = len(tickers)
+    total_batches = (total_tickers // chunk_size) + 1
     
-    # Downloading the whole universe at once
-    data = yf.download(tickers, start=start_date, end=end_date, progress=False, threads=True)
+    for i in range(0, total_tickers, chunk_size):
+        chunk = tickers[i:i + chunk_size]
+        current_batch = (i // chunk_size) + 1
+        status.text(f"Step 1/4: Downloading Data - Batch {current_batch} of {total_batches}...")
+        
+        try:
+            temp_data = yf.download(chunk, start=start_date, end=end_date, progress=False, threads=True)
+            if not temp_data.empty:
+                if len(chunk) == 1:
+                    close_list.append(temp_data[['Close']].rename(columns={'Close': chunk[0]}))
+                    high_list.append(temp_data[['High']].rename(columns={'High': chunk[0]}))
+                    low_list.append(temp_data[['Low']].rename(columns={'Low': chunk[0]}))
+                    vol_list.append(temp_data[['Volume']].rename(columns={'Volume': chunk[0]}))
+                else:
+                    close_list.append(temp_data['Close'])
+                    high_list.append(temp_data['High'])
+                    low_list.append(temp_data['Low'])
+                    vol_list.append(temp_data['Volume'])
+        except Exception:
+            pass
+        
+        # Smooth Progress Bar Update
+        progress.progress(min(0.3 * ((i + chunk_size) / total_tickers), 0.3))
+        time.sleep(0.5) # Prevents Yahoo Finance from blocking us
+        
+    status.text("Step 2/4: Merging Data & Calculating True RS Matrix...")
+    progress.progress(0.35)
     
-    if isinstance(data.columns, pd.MultiIndex):
-        close_df = data['Close']
-        high_df = data['High']
-        low_df = data['Low']
-        vol_df = data['Volume']
-    else:
-        st.error("Error formatting data. Update yfinance or check internet.")
+    if not close_list:
+        st.error("Data download failed. Check network or try again.")
         st.stop()
         
-    status.text("Step 2/4: Calculating True Market Relative Strength (RS) Matrix...")
+    close_df = pd.concat(close_list, axis=1)
+    high_df = pd.concat(high_list, axis=1)
+    low_df = pd.concat(low_list, axis=1)
+    vol_df = pd.concat(vol_list, axis=1)
+    
     progress.progress(0.4)
     
     # Calculate 3 Month rolling return for ALL stocks 
@@ -85,7 +114,7 @@ if st.button("Start Full Market Backtest (~3-4 Mins)"):
         df['SMA_50'] = df['Close'].rolling(50).mean()
         df['SMA_200'] = df['Close'].rolling(200).mean()
         
-        # 10 Crore Turnover Rule to avoid penny stocks in backtest
+        # 10 Crore Turnover Rule
         df['Turnover'] = df['Close'] * df['Volume'].shift(1).rolling(20).mean()
         
         df['Prev_20D_High'] = df['High'].shift(1).rolling(20).max()
