@@ -3,8 +3,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import datetime
-import io
-import requests
 
 st.set_page_config(page_title="Nifty 500 Sniper Backtester", layout="wide")
 st.title("📊 Nifty 500 Sniper Backtest (Sept 2024 - Present)")
@@ -12,28 +10,22 @@ st.write("Rules: Top 20% RS + 20D Pullback Breakout -> 10% Target or 10% Stop Lo
 
 @st.cache_data(ttl=86400)
 def get_nifty_500():
-    url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    res = requests.get(url, headers=headers)
-    df = pd.read_csv(io.StringIO(res.text))
-    
-    # Handle variations in NSE CSV column names
-    if 'Symbol' in df.columns:
-        return [str(sym).strip() + ".NS" for sym in df['Symbol'].tolist()]
-    elif 'SYMBOL' in df.columns:
-        return [str(sym).strip() + ".NS" for sym in df['SYMBOL'].tolist()]
-    else:
-        # Fallback if both are missing
-        st.error(f"Error reading NSE file. Columns found: {df.columns.tolist()}")
-        st.stop()
+    # Fetching Nifty 500 from Wikipedia to bypass NSE blocks
+    url = "https://en.wikipedia.org/wiki/NIFTY_500"
+    tables = pd.read_html(url)
+    df = tables[2] # The 3rd table on the page contains the constituents
+    return [str(sym).strip() + ".NS" for sym in df['Symbol'].tolist()]
 
 if st.button("Start Nifty 500 Backtest (~1-2 Mins)"):
     status = st.empty()
     progress = st.progress(0)
     
-    tickers = get_nifty_500()
-    
-    # 200-DMA aur 3M RS ke liye data March 2024 se chahiye
+    try:
+        tickers = get_nifty_500()
+    except Exception as e:
+        st.error(f"Error fetching Nifty 500 list: {e}")
+        st.stop()
+        
     start_date = "2024-03-01"
     end_date = datetime.datetime.today().strftime('%Y-%m-%d')
     backtest_start = pd.to_datetime("2024-09-01")
@@ -53,9 +45,7 @@ if st.button("Start Nifty 500 Backtest (~1-2 Mins)"):
     status.text("Step 2/4: Calculating Daily Relative Strength (RS) Matrix...")
     progress.progress(0.4)
     
-    # Calculate 63-day (3 Month) rolling return for Nifty 500 stocks
     roll_ret_63 = close_df.pct_change(periods=63)
-    # Rank them cross-sectionally day-by-day (0 to 100)
     rs_matrix = roll_ret_63.rank(axis=1, pct=True) * 100
 
     status.text("Step 3/4: Running Trade Simulation (Entry -> Target/SL)...")
@@ -100,21 +90,16 @@ if st.button("Start Nifty 500 Backtest (~1-2 Mins)"):
         
         for date, row in df_backtest.iterrows():
             if not in_trade:
-                # 1. Base Criteria
                 if row['Close'] > row['SMA_200'] and row['Turnover'] > 100000000:
-                    # 2. RS and Alignment
                     if row['RS'] >= 80 and row['SMA_20'] > row['SMA_50'] > row['SMA_200']:
-                        # 3. Pullback Setup: touched 20D low recently
                         if row['Recent_10D_Low'] == row['Prev_20D_Low']:
-                            # 4. Breakout Trigger: High crosses Prev 20D High
                             if row['High'] >= row['Prev_20D_High'] and row['Prev_20D_High'] > row['SMA_20']:
                                 in_trade = True
                                 entry_date = date
                                 entry_price = row['Prev_20D_High'] 
-                                target_price = entry_price * 1.10  # 10% Target
-                                sl_price = entry_price * 0.90      # 10% Stop Loss
+                                target_price = entry_price * 1.10
+                                sl_price = entry_price * 0.90
             else:
-                # IN TRADE: Check for Exit
                 exit_price = 0.0
                 exit_date = date
                 trade_result = ""
