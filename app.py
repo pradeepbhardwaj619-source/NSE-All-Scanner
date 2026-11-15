@@ -7,7 +7,7 @@ import time
 
 st.set_page_config(page_title="Master RS & Sniper Entry Scanner", layout="wide")
 st.title("🦅 Full NSE - Premium Universe Sniper Scanner")
-st.write("Flow: 200-DMA & 10Cr -> MCap > 1000Cr -> Top 20% RS (w/ Base Builder Exception) -> 🎯 Sniper Entry")
+st.write("Flow: 200-DMA & 10Cr -> Strict MCap > 2000Cr -> Top 20% RS -> 🎯 Sniper Entry")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -59,7 +59,6 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                     sma_20 = float(df['Close'].rolling(window=20).mean().iloc[-1])
                     sma_50 = float(df['Close'].rolling(window=50).mean().iloc[-1])
                     
-                    # 52-Week High Calculation
                     high_52w = float(df['High'].max())
                     dist_from_52w_high = ((high_52w - cmp) / high_52w) * 100
                     
@@ -158,7 +157,11 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
         try:
             tkr = yf.Ticker(row['Stock'] + ".NS")
             mcap_cr = tkr.fast_info['marketCap'] / 10000000
-            if mcap_cr >= 1000:
+            
+            # ==========================================
+            # 🛡️ UPDATED RULE: STRICTLY > 2000 CR MARKET CAP
+            # ==========================================
+            if mcap_cr >= 2000:
                 row['MCap (Cr)'] = round(mcap_cr, 2)
                 stage2_results.append(row)
         except Exception:
@@ -171,7 +174,6 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
     if stage2_results:
         df_all = pd.DataFrame(stage2_results)
         
-        # RS Rankings
         df_all['3M RS'] = (df_all['3M Return %'].rank(pct=True) * 100)
         df_all['3M RS 1W Ago'] = (df_all['3M Return 1W Ago %'].rank(pct=True) * 100)
         df_all['RS 1W Chg'] = df_all['3M RS'] - df_all['3M RS 1W Ago']
@@ -186,14 +188,8 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                 
         df_all['RS Trend (1W)'] = df_all['RS 1W Chg'].apply(format_trend)
         
-        # ==========================================
-        # 🎯 THE MAGIC FIX: "Base Builder" Exception Rule
-        # ==========================================
-        is_leader = df_all['3M RS'] >= 80
-        # If RS drops down to 65, but it is within 15% of 52W High (tight base), keep it!
-        is_base_builder = (df_all['3M RS'] >= 65) & (df_all['Dist from 52W High %'] <= 15.0)
-        
-        final_df = df_all[is_leader | is_base_builder].copy()
+        # Strictly Top 20% RS Only
+        final_df = df_all[df_all['3M RS'] >= 80].copy()
         
         status.empty()
         progress_bar.empty()
@@ -208,13 +204,11 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
             cols.insert(1, cols.pop(cols.index('MCap (Cr)')))
             cols.insert(2, cols.pop(cols.index('Entry Alert')))
             cols.insert(cols.index('3M RS') + 1, cols.pop(cols.index('RS Trend (1W)')))
-            
-            # Show Dist from 52W High near the end
             cols.insert(cols.index('20 SMA'), cols.pop(cols.index('Dist from 52W High %')))
             final_df = final_df[cols]
             
             sniper_count = len(final_df[final_df['Entry Alert'] == "🎯 Sniper Entry"])
-            st.success(f"✅ {len(final_df)} Premium Leaders Found! ({sniper_count} Fresh '🎯 Sniper Entry' setups)")
+            st.success(f"✅ {len(final_df)} Ultra-Premium Leaders Found! ({sniper_count} Fresh '🎯 Sniper Entry' setups)")
             
             st.dataframe(
                 final_df.round(2), 
@@ -232,6 +226,6 @@ if st.button("Start Premium Market Scan (~2000 Stocks)"):
                 }
             )
         else:
-            st.warning("Aaj Premium Universe mein कोई स्टॉक टॉप क्राइटेरिया पास नहीं कर पाया।")
+            st.warning("Aaj Ultra-Premium Universe में कोई स्टॉक टॉप क्राइटेरिया पास नहीं कर पाया।")
     else:
         st.error("Market data fetch करने में एरर आई।")
