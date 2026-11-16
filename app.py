@@ -9,7 +9,7 @@ import concurrent.futures
 
 st.set_page_config(page_title="Super RS Scanner", layout="wide")
 st.title("🦅 Super RS Scanner: Top 750 Liquid Universe")
-st.markdown("**(Top 750 Liquidity -> 200-DMA & 10Cr -> 3M RS >= 80 -> RS Momentum -> Sniper Entry)**")
+st.markdown("**(Top 750 Liquidity -> 200-DMA & 10Cr -> 3M RS >= 80 -> Sniper Entry)**")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -114,7 +114,7 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     
     top_rs_tickers = rs_current[rs_current >= 80].index.tolist()
     
-    status.text("Step 5/6: Finding Sniper Entries & Breakouts...")
+    status.text("Step 5/6: Finding Sniper Entries, Breakouts & Proximity...")
     progress.progress(0.85)
     
     results = []
@@ -140,9 +140,15 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         dist_20 = ((cmp_val - sma20) / sma20) * 100
         dist_50 = ((cmp_val - sma50) / sma50) * 100
         
+        # --- NEW: DISTANCE TO BREAKOUT CALCULATION ---
         prev_20d_high = c_high.iloc[-21:-1].max()
+        dist_to_breakout = ((prev_20d_high - cmp_val) / cmp_val) * 100
+        
         if cmp_val >= prev_20d_high:
             setup = "🔥 20D Breakout"
+            dist_to_breakout = 0.0 # Already broken out
+        elif 0 < dist_to_breakout <= 7.0:
+            setup = "⚠️ Near Breakout"
         elif -2 <= dist_20 <= 4 or -2 <= dist_50 <= 4:
             setup = "🟢 Pullback Setup"
         else:
@@ -164,9 +170,10 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
             "3M RS Rating": round(c_rs, 1),
             "RS Momentum": rs_mom,
             "Entry Setup": setup,
+            "Dist. to BO (%)": round(dist_to_breakout, 2), # New Column Added
             "Volume Alert": vol_alert,
-            "Suggested TGT (8%)": round(suggested_target, 2),
-            "Suggested Max SL (-15%)": round(suggested_sl, 2)
+            "Target (8%)": round(suggested_target, 2),
+            "Max SL (-15%)": round(suggested_sl, 2)
         })
 
     status.text("Step 6/6: Fetching Sector details for final stocks... (Fast)")
@@ -175,21 +182,22 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     if results:
         df_results = pd.DataFrame(results)
         
-        # Parallel fetch for only the selected 30-50 stocks (Very Fast)
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
             sectors = list(executor.map(get_sector, df_results['Ticker'].tolist()))
         
         df_results.insert(2, 'Sector', sectors)
         df_results = df_results.drop(columns=['Ticker'])
-        df_results = df_results.sort_values(by="3M RS Rating", ascending=False).reset_index(drop=True)
+        
+        # Sort so that Breakouts and Near Breakouts appear at the top
+        df_results['Setup_Score'] = df_results['Entry Setup'].map({"🔥 20D Breakout": 1, "⚠️ Near Breakout": 2, "🟢 Pullback Setup": 3, "⏳ Consolidating": 4})
+        df_results = df_results.sort_values(by=["Setup_Score", "3M RS Rating"], ascending=[True, False]).drop(columns=['Setup_Score']).reset_index(drop=True)
         
         progress.progress(1.0)
         status.empty()
         
         st.success(f"✅ Scan Complete! Found {len(df_results)} Institutional Grade Momentum Leaders.")
         
-        # --- SECTOR SUMMARY LOGIC ---
-        st.subheader("🧩 Sector Sentiment (Where is the Money Flowing?)")
+        st.subheader("🧩 Sector Sentiment (Money Flow)")
         
         sector_counts = df_results['Sector'].value_counts()
         
@@ -201,9 +209,8 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
                 st.write(f"- **{sector}**: {count} stocks")
                 
         with col2:
-            st.write("**🔥 Breakout & 🚀 High Volume Leaders by Sector:**")
-            # Filter stocks that have either a Breakout or High Volume
-            action_stocks = df_results[(df_results['Entry Setup'] == '🔥 20D Breakout') | (df_results['Volume Alert'] == '🚀 High Vol')]
+            st.write("**🔥 Actionable Stocks by Sector:**")
+            action_stocks = df_results[(df_results['Entry Setup'].isin(['🔥 20D Breakout', '⚠️ Near Breakout'])) | (df_results['Volume Alert'] == '🚀 High Vol')]
             
             if not action_stocks.empty:
                 for sector in sector_counts.index:
@@ -213,6 +220,7 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
                         for _, row in sec_action.iterrows():
                             badges = ""
                             if row['Entry Setup'] == '🔥 20D Breakout': badges += "🔥"
+                            if row['Entry Setup'] == '⚠️ Near Breakout': badges += "⚠️"
                             if row['Volume Alert'] == '🚀 High Vol': badges += "🚀"
                             stock_details.append(f"{row['Stock']} ({badges})")
                             
@@ -223,15 +231,17 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         st.divider()
         st.subheader("📋 Detailed Scanner Results")
         
-        def highlight_breakout(s):
+        def highlight_setup(s):
             if s == "🔥 20D Breakout":
                 return "color: #FF4B4B; font-weight: bold"
+            elif s == "⚠️ Near Breakout":
+                return "color: #FFA500; font-weight: bold"
             elif s == "🟢 Pullback Setup":
                 return "color: #00CC96; font-weight: bold"
             return ""
             
         st.dataframe(
-            df_results.style.map(highlight_breakout, subset=['Entry Setup']),
+            df_results.style.map(highlight_setup, subset=['Entry Setup']),
             use_container_width=True,
             height=600
         )
