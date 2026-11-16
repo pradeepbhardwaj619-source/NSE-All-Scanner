@@ -5,11 +5,10 @@ import numpy as np
 import requests
 import io
 import time
-import concurrent.futures
 
 st.set_page_config(page_title="Super RS Scanner", layout="wide")
 st.title("🦅 Super RS Scanner: Top 750 Liquid Universe")
-st.markdown("**(Top 750 Liquidity -> 200-DMA & 10Cr -> 3M RS >= 80 -> RS Momentum -> Sniper Entry)**")
+st.markdown("**(Top 750 Liquidity -> 200-DMA & 10Cr -> 3M RS >= 80 -> Sniper Entry & 20M High Check)**")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -23,25 +22,31 @@ def get_all_nse():
         df = df[df['SERIES'].str.strip() == 'EQ']
     return [str(sym).strip() + ".NS" for sym in df['SYMBOL'].tolist()]
 
-# Safe API call to get Sector bypassing Yahoo Finance blocks
+# --- SAFE SECTOR FETCHING (ANTI-BLOCK LOGIC) ---
 def get_sector(ticker):
     session = requests.Session()
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     })
-    try:
-        info = yf.Ticker(ticker, session=session).info
-        sector = info.get('sector', 'Unknown')
-        if not sector: 
-            return 'Unknown'
-        return sector
-    except Exception:
-        return 'Unknown'
+    
+    for attempt in range(2):
+        try:
+            info = yf.Ticker(ticker, session=session).info
+            sector = info.get('sector', 'Unknown')
+            if sector and sector != 'Unknown':
+                return sector
+            time.sleep(0.5) 
+        except Exception:
+            time.sleep(0.5)
+            continue
+            
+    return 'Unknown'
 
-if st.button("🚀 Start Super Scan (~1 Min)"):
+if st.button("🚀 Start Super Scan (~1.5 Min)"):
     status = st.empty()
     progress = st.progress(0)
     
+    # 1. Fetch NSE Tickers
     status.text("Step 1/6: Fetching NSE Equities...")
     try:
         tickers = get_all_nse()
@@ -49,7 +54,8 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         st.error(f"List Fetch Error: {e}")
         st.stop()
     
-    status.text(f"Step 2/6: Downloading Data for {len(tickers)} Stocks...")
+    # 2. Downloading 2 YEARS of data (to calculate 20-Month High which is ~420 trading days)
+    status.text(f"Step 2/6: Downloading 2 Years Data for {len(tickers)} Stocks...")
     progress.progress(0.1)
     
     chunk_size = 500
@@ -59,7 +65,7 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     for i in range(0, len(tickers), chunk_size):
         chunk = tickers[i:i + chunk_size]
         status.text(f"Step 2/6: Downloading Data... Batch {i//chunk_size + 1}/{total_batches}")
-        df_chunk = yf.download(chunk, period="1y", group_by="ticker", progress=False, threads=True)
+        df_chunk = yf.download(chunk, period="2y", group_by="ticker", progress=False, threads=True)
         data_frames.append(df_chunk)
         progress.progress(0.1 + (0.3 * (i / len(tickers))))
     
@@ -78,6 +84,7 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         st.error(f"Extraction Error: {e}")
         st.stop()
         
+    # 3. Liquidity Filter
     status.text("Step 3/6: Filtering Top 750 by Liquidity (Anti-Operator Game)...")
     progress.progress(0.5)
     
@@ -101,6 +108,7 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     lows = lows[top_750_tickers]
     avg_turnover = avg_turnover[top_750_tickers]
     
+    # 4. True RS Rating & Momentum
     status.text("Step 4/6: Calculating True RS Rating & Momentum on Top 750...")
     progress.progress(0.7)
     
@@ -121,7 +129,8 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     
     top_rs_tickers = rs_current[rs_current >= 80].index.tolist()
     
-    status.text("Step 5/6: Finding Sniper Entries, Breakouts & Proximity...")
+    # 5. Finding Sniper Entries & 20M Highs
+    status.text("Step 5/6: Finding Sniper Entries, 20M Highs & Breakouts...")
     progress.progress(0.85)
     
     results = []
@@ -150,6 +159,13 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         prev_20d_high = c_high.iloc[-21:-1].max()
         dist_to_breakout = ((prev_20d_high - cmp_val) / cmp_val) * 100
         
+        high_20m = c_high.tail(420).max()
+        dist_to_20m_high = ((high_20m - cmp_val) / cmp_val) * 100
+        
+        super_setup = ""
+        if dist_to_20m_high <= 5.0:  
+            super_setup = "⭐ A+ 20M High"
+            
         if cmp_val >= prev_20d_high:
             setup = "🔥 20D Breakout"
             dist_to_breakout = 0.0
@@ -174,29 +190,35 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
             "Stock": t.replace(".NS", ""),
             "CMP (₹)": round(cmp_val, 2),
             "3M RS Rating": round(c_rs, 1),
-            "RS Momentum": rs_mom,
+            "Super Setup": super_setup, 
             "Entry Setup": setup,
             "Dist. to BO (%)": round(dist_to_breakout, 2),
+            "Dist. to 20M High (%)": round(dist_to_20m_high, 2), 
             "Volume Alert": vol_alert,
             "Target (8%)": round(suggested_target, 2),
             "Max SL (-15%)": round(suggested_sl, 2)
         })
 
-    status.text("Step 6/6: Fetching Sector details for final stocks... (Safe Mode)")
+    # 6. Sector Fetching (SEQUENTIAL & SAFE MODE to prevent "Unknown" block)
+    status.text("Step 6/6: Fetching Sectors Slowly to Bypass Yahoo Block...")
     progress.progress(0.95)
     
     if results:
         df_results = pd.DataFrame(results)
         
-        # Max workers 5 to bypass Yahoo Finance IP block
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            sectors = list(executor.map(get_sector, df_results['Ticker'].tolist()))
-        
+        sectors = []
+        for idx, row in df_results.iterrows():
+            sec = get_sector(row['Ticker'])
+            sectors.append(sec)
+            status.text(f"Step 6/6: Fetching Sectors... ({idx+1}/{len(results)})")
+            time.sleep(0.3) # Delay to prevent getting blocked by Yahoo Finance
+            
         df_results.insert(2, 'Sector', sectors)
         df_results = df_results.drop(columns=['Ticker'])
         
         df_results['Setup_Score'] = df_results['Entry Setup'].map({"🔥 20D Breakout": 1, "⚠️ Near Breakout": 2, "🟢 Pullback Setup": 3, "⏳ Consolidating": 4})
-        df_results = df_results.sort_values(by=["Setup_Score", "3M RS Rating"], ascending=[True, False]).drop(columns=['Setup_Score']).reset_index(drop=True)
+        df_results['Super_Score'] = df_results['Super Setup'].map({"⭐ A+ 20M High": 1, "": 2})
+        df_results = df_results.sort_values(by=["Super_Score", "Setup_Score", "3M RS Rating"], ascending=[True, True, False]).drop(columns=['Setup_Score', 'Super_Score']).reset_index(drop=True)
         
         progress.progress(1.0)
         status.empty()
@@ -215,8 +237,8 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
                 st.write(f"- **{sector}**: {count} stocks")
                 
         with col2:
-            st.write("**🔥 Actionable Stocks by Sector:**")
-            action_stocks = df_results[(df_results['Entry Setup'].isin(['🔥 20D Breakout', '⚠️ Near Breakout'])) | (df_results['Volume Alert'] == '🚀 High Vol')]
+            st.write("**🔥 Actionable & ⭐ Super Setups by Sector:**")
+            action_stocks = df_results[(df_results['Entry Setup'].isin(['🔥 20D Breakout', '⚠️ Near Breakout'])) | (df_results['Super Setup'] == '⭐ A+ 20M High')]
             
             if not action_stocks.empty:
                 for sector in sector_counts.index:
@@ -225,6 +247,7 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
                         stock_details = []
                         for _, row in sec_action.iterrows():
                             badges = ""
+                            if row['Super Setup'] == '⭐ A+ 20M High': badges += "⭐"
                             if row['Entry Setup'] == '🔥 20D Breakout': badges += "🔥"
                             if row['Entry Setup'] == '⚠️ Near Breakout': badges += "⚠️"
                             if row['Volume Alert'] == '🚀 High Vol': badges += "🚀"
@@ -246,8 +269,13 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
                 return "color: #00CC96; font-weight: bold"
             return ""
             
+        def highlight_super(s):
+            if s == "⭐ A+ 20M High":
+                return "background-color: #FFFF00; color: #000000; font-weight: bold"
+            return ""
+            
         st.dataframe(
-            df_results.style.map(highlight_setup, subset=['Entry Setup']),
+            df_results.style.map(highlight_setup, subset=['Entry Setup']).map(highlight_super, subset=['Super Setup']),
             use_container_width=True,
             height=600
         )
