@@ -9,7 +9,7 @@ import concurrent.futures
 
 st.set_page_config(page_title="Super RS Scanner", layout="wide")
 st.title("🦅 Super RS Scanner: Top 750 Liquid Universe")
-st.markdown("**(Top 750 Liquidity -> 200-DMA & 10Cr -> 3M RS >= 80 -> Sniper Entry)**")
+st.markdown("**(Top 750 Liquidity -> 200-DMA & 10Cr -> 3M RS >= 80 -> RS Momentum -> Sniper Entry)**")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -23,11 +23,18 @@ def get_all_nse():
         df = df[df['SERIES'].str.strip() == 'EQ']
     return [str(sym).strip() + ".NS" for sym in df['SYMBOL'].tolist()]
 
-# Fast API call to get Sector for final stocks only
+# Safe API call to get Sector bypassing Yahoo Finance blocks
 def get_sector(ticker):
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    })
     try:
-        info = yf.Ticker(ticker).info
-        return info.get('sector', 'Unknown')
+        info = yf.Ticker(ticker, session=session).info
+        sector = info.get('sector', 'Unknown')
+        if not sector: 
+            return 'Unknown'
+        return sector
     except Exception:
         return 'Unknown'
 
@@ -140,13 +147,12 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         dist_20 = ((cmp_val - sma20) / sma20) * 100
         dist_50 = ((cmp_val - sma50) / sma50) * 100
         
-        # --- NEW: DISTANCE TO BREAKOUT CALCULATION ---
         prev_20d_high = c_high.iloc[-21:-1].max()
         dist_to_breakout = ((prev_20d_high - cmp_val) / cmp_val) * 100
         
         if cmp_val >= prev_20d_high:
             setup = "🔥 20D Breakout"
-            dist_to_breakout = 0.0 # Already broken out
+            dist_to_breakout = 0.0
         elif 0 < dist_to_breakout <= 7.0:
             setup = "⚠️ Near Breakout"
         elif -2 <= dist_20 <= 4 or -2 <= dist_50 <= 4:
@@ -170,25 +176,25 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
             "3M RS Rating": round(c_rs, 1),
             "RS Momentum": rs_mom,
             "Entry Setup": setup,
-            "Dist. to BO (%)": round(dist_to_breakout, 2), # New Column Added
+            "Dist. to BO (%)": round(dist_to_breakout, 2),
             "Volume Alert": vol_alert,
             "Target (8%)": round(suggested_target, 2),
             "Max SL (-15%)": round(suggested_sl, 2)
         })
 
-    status.text("Step 6/6: Fetching Sector details for final stocks... (Fast)")
+    status.text("Step 6/6: Fetching Sector details for final stocks... (Safe Mode)")
     progress.progress(0.95)
     
     if results:
         df_results = pd.DataFrame(results)
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        # Max workers 5 to bypass Yahoo Finance IP block
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             sectors = list(executor.map(get_sector, df_results['Ticker'].tolist()))
         
         df_results.insert(2, 'Sector', sectors)
         df_results = df_results.drop(columns=['Ticker'])
         
-        # Sort so that Breakouts and Near Breakouts appear at the top
         df_results['Setup_Score'] = df_results['Entry Setup'].map({"🔥 20D Breakout": 1, "⚠️ Near Breakout": 2, "🟢 Pullback Setup": 3, "⏳ Consolidating": 4})
         df_results = df_results.sort_values(by=["Setup_Score", "3M RS Rating"], ascending=[True, False]).drop(columns=['Setup_Score']).reset_index(drop=True)
         
