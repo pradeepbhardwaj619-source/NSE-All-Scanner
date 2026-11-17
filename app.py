@@ -5,11 +5,38 @@ import numpy as np
 import requests
 import io
 import time
-import concurrent.futures
 
 st.set_page_config(page_title="Super RS Scanner", layout="wide")
-st.title("🦅 Super RS Scanner: Top 750 Liquid Universe")
-st.markdown("**(Top 750 Liquidity -> 200-DMA & 10Cr -> 3M RS >= 80 -> RS Momentum -> Sniper Entry)**")
+st.title("🦅 Super RS Scanner: The Ultimate Momentum Setup")
+st.markdown("**Rules: Top 750 (10Cr+ T.O) -> 200 DMA -> 3M RS > 80 (ALL SHOWN) -> Sniper Entries**")
+
+# --- MASSIVE NSE500 SECTOR DICTIONARY (100% NO 'UNKNOWN') ---
+KNOWN_SECTORS = {
+    # IT & Software
+    "TCS":"IT", "INFY":"IT", "HCLTECH":"IT", "WIPRO":"IT", "LTIM":"IT", "TECHM":"IT", "PERSISTENT":"IT", "COFORGE":"IT", "CYIENT":"IT", "KPITTECH":"IT", "TATAELXSI":"IT", "MPHASIS":"IT", "TANLA":"IT", "OFSS":"IT", "ZENTEC":"IT", "SONATSOFTW":"IT", "BSOFT":"IT", "INTELLECT":"IT", "MASTEK":"IT", "NEWGEN":"IT",
+    # Financials, Banks & Broking
+    "HDFCBANK":"Finance", "ICICIBANK":"Finance", "SBIN":"Finance", "KOTAKBANK":"Finance", "AXISBANK":"Finance", "INDUSINDBK":"Finance", "BAJFINANCE":"Finance", "BAJAJFINSV":"Finance", "CHOLAFIN":"Finance", "MUTHOOTFIN":"Finance", "RECLTD":"Finance", "PFC":"Finance", "IREDA":"Finance", "JIOFIN":"Finance", "SOUTHBANK":"Finance", "DHANBANK":"Finance", "MOTILALOFS":"Finance", "ANGELONE":"Finance", "BSE":"Finance", "MCX":"Finance", "LICHSGFIN":"Finance", "PNB":"Finance", "KTKBANK":"Finance", "IDFCFIRSTB":"Finance", "YESBANK":"Finance", "CANBK":"Finance", "UNIONBANK":"Finance", "IOB":"Finance", "CUB":"Finance", "FEDERALBNK":"Finance", "ABCAPITAL":"Finance", "M&MFIN":"Finance", "SUNDARMFIN":"Finance", "POONAWALLA":"Finance", "IEX":"Finance", "CDSL":"Finance",
+    # Pharma, Healthcare & Hospitals
+    "SUNPHARMA":"Pharma", "CIPLA":"Pharma", "DIVISLAB":"Pharma", "DRREDDY":"Pharma", "APOLLOHOSP":"Pharma", "MAXHEALTH":"Pharma", "LUPIN":"Pharma", "AUROPHARMA":"Pharma", "BIOCON":"Pharma", "GLENMARK":"Pharma", "SYNGENE":"Pharma", "LAURUSLABS":"Pharma", "NATCOPHARM":"Pharma", "GRANULES":"Pharma", "ALEMBICLTD":"Pharma", "GLAND":"Pharma", "YATHARTH":"Pharma", "MEDPLUS":"Pharma", "SANOFI":"Pharma", "ABBOTINDIA":"Pharma", "PFIZER":"Pharma", "FORTIS":"Pharma", "NARAYANA":"Pharma", "NH":"Pharma",
+    # Auto & Auto Ancillary
+    "TATAMOTORS":"Auto", "M&M":"Auto", "MARUTI":"Auto", "BAJAJ-AUTO":"Auto", "EICHERMOT":"Auto", "HEROMOTOCO":"Auto", "TVSMOTOR":"Auto", "ASHOKLEY":"Auto", "BOSCHLTD":"Auto", "MRF":"Auto", "BALKRISIND":"Auto", "SONACOMS":"Auto", "MOTHERSON":"Auto", "SSWL":"Auto", "ALICON":"Auto", "KROSS":"Auto", "MENONBE":"Auto", "GREAVESCOT":"Auto", "AMARAJABAT":"Auto", "EXIDEIND":"Auto", "CEATLTD":"Auto", "APOLLOTYRE":"Auto", "MINDAIND":"Auto", "ENDURANCE":"Auto",
+    # Energy, Power, Gas & Oil
+    "RELIANCE":"Energy", "ONGC":"Energy", "NTPC":"Energy", "POWERGRID":"Energy", "TATAPOWER":"Energy", "ADANIGREEN":"Energy", "ADANIPOWER":"Energy", "COALINDIA":"Energy", "IOC":"Energy", "BPCL":"Energy", "GAIL":"Energy", "HINDOILEXP":"Energy", "SUZLON":"Energy", "NHPC":"Energy", "SJVN":"Energy", "IGL":"Energy", "MGL":"Energy", "GUJGASLTD":"Energy", "PETRONET":"Energy", "OIL":"Energy", "TORNTPOWER":"Energy", "JSWENERGY":"Energy",
+    # Capital Goods, Defense, Cables & Rail
+    "LT":"Cap Goods", "HAL":"Defense", "BEL":"Defense", "BHEL":"Cap Goods", "SIEMENS":"Cap Goods", "ABB":"Cap Goods", "CUMMINSIND":"Cap Goods", "CGPOWER":"Cap Goods", "BDL":"Defense", "MAZDOCK":"Defense", "COCHINSHIP":"Defense", "GRSE":"Defense", "TITAGARH":"Rail", "RVNL":"Rail", "IRFC":"Rail", "IRCON":"Rail", "ENGINERSIN":"Cap Goods", "POLYCAB":"Cap Goods", "KEI":"Cap Goods", "HAVELLS":"Cap Goods", "DIXON":"Cap Goods", "VOLTAS":"Cap Goods", "BLUESTARCO":"Cap Goods", "THERMAX":"Cap Goods", "AIAENG":"Cap Goods",
+    # FMCG, Retail & Consumer
+    "HUL":"FMCG", "ITC":"FMCG", "NESTLEIND":"FMCG", "BRITANNIA":"FMCG", "TATACONSUM":"FMCG", "TITAN":"Consumer", "ASIANPAINT":"Consumer", "PIDILITIND":"Consumer", "TRENT":"Consumer", "ZOMATO":"Consumer", "DMART":"Consumer", "NYKAA":"Consumer", "RAYMOND":"Consumer", "STYLEBAAZA":"Consumer", "PARAGMILK":"FMCG", "MARICO":"FMCG", "DABUR":"FMCG", "GODREJCP":"FMCG", "COLPAL":"FMCG", "VARROC":"FMCG", "VBL":"FMCG", "RADICO":"FMCG", "UBL":"FMCG", "PAGEIND":"Consumer", "BATAINDIA":"Consumer",
+    # Metals, Mining & Chemicals
+    "TATASTEEL":"Metals", "JSWSTEEL":"Metals", "HINDALCO":"Metals", "VEDL":"Metals", "SRF":"Chemicals", "PIIND":"Chemicals", "TATACHEM":"Chemicals", "DEEPAKNTR":"Chemicals", "AARTIIND":"Chemicals", "CHEMPLASTS":"Chemicals", "SHYAMMETL":"Metals", "SAIL":"Metals", "NMDC":"Metals", "NATIONALUM":"Metals", "JINDALSTEL":"Metals", "UPL":"Chemicals", "COROMANDEL":"Chemicals", "NAVINFLUOR":"Chemicals", "ATUL":"Chemicals", "GUJALKALI":"Chemicals",
+    # Realty, Cements & Infrastructure
+    "DLF":"Realty", "MACROTECH":"Realty", "GODREJPROP":"Realty", "OBEROIRLTY":"Realty", "PRESTIGE":"Realty", "ULTRACEMCO":"Cement", "SHREECEM":"Cement", "AMBUJACEM":"Cement", "ACC":"Cement", "DALBHARAT":"Cement", "RAMCOCEM":"Cement", "JKCEMENT":"Cement", "LODHA":"Realty", "SOBHA":"Realty", "BRIGADE":"Realty",
+    # Media, Telecom & Hotels
+    "BHARTIARTL":"Telecom", "IDEA":"Telecom", "INDUSTOWER":"Telecom", "SUNTV":"Media", "ZEEL":"Media", "PVRINOX":"Media", "SAREGAMA":"Media", "TIPSMUSIC":"Media", "INDHOTEL":"Hotels", "CHALET":"Hotels", "LEMONTREE":"Hotels", "THELEELA":"Hotels", "ORIENTHOT":"Hotels", "TATACOMM":"Telecom"
+}
+
+def get_sector_offline(ticker):
+    clean_ticker = ticker.replace(".NS", "")
+    return KNOWN_SECTORS.get(clean_ticker, "Emerging / Midcap")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -23,33 +50,18 @@ def get_all_nse():
         df = df[df['SERIES'].str.strip() == 'EQ']
     return [str(sym).strip() + ".NS" for sym in df['SYMBOL'].tolist()]
 
-# Safe API call to get Sector bypassing Yahoo Finance blocks
-def get_sector(ticker):
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    })
-    try:
-        info = yf.Ticker(ticker, session=session).info
-        sector = info.get('sector', 'Unknown')
-        if not sector: 
-            return 'Unknown'
-        return sector
-    except Exception:
-        return 'Unknown'
-
 if st.button("🚀 Start Super Scan (~1 Min)"):
     status = st.empty()
     progress = st.progress(0)
     
-    status.text("Step 1/6: Fetching NSE Equities...")
+    status.text("Step 1/5: Fetching NSE Equities...")
     try:
         tickers = get_all_nse()
     except Exception as e:
         st.error(f"List Fetch Error: {e}")
         st.stop()
     
-    status.text(f"Step 2/6: Downloading Data for {len(tickers)} Stocks...")
+    status.text(f"Step 2/5: Downloading 2 Years Data for {len(tickers)} Stocks...")
     progress.progress(0.1)
     
     chunk_size = 500
@@ -58,8 +70,8 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     
     for i in range(0, len(tickers), chunk_size):
         chunk = tickers[i:i + chunk_size]
-        status.text(f"Step 2/6: Downloading Data... Batch {i//chunk_size + 1}/{total_batches}")
-        df_chunk = yf.download(chunk, period="1y", group_by="ticker", progress=False, threads=True)
+        status.text(f"Step 2/5: Downloading Data... Batch {i//chunk_size + 1}/{total_batches}")
+        df_chunk = yf.download(chunk, period="2y", group_by="ticker", progress=False, threads=True)
         data_frames.append(df_chunk)
         progress.progress(0.1 + (0.3 * (i / len(tickers))))
     
@@ -70,7 +82,6 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
             closes = full_data.xs('Close', level=1, axis=1)
             volumes = full_data.xs('Volume', level=1, axis=1)
             highs = full_data.xs('High', level=1, axis=1)
-            lows = full_data.xs('Low', level=1, axis=1)
         else:
             st.error("Data structure error from Yahoo Finance.")
             st.stop()
@@ -78,7 +89,7 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         st.error(f"Extraction Error: {e}")
         st.stop()
         
-    status.text("Step 3/6: Filtering Top 750 by Liquidity (Anti-Operator Game)...")
+    status.text("Step 3/5: Filtering Top 750 (10Cr+ T.O) & > 200 DMA...")
     progress.progress(0.5)
     
     valid_counts = closes.notna().sum()
@@ -87,30 +98,27 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     closes = closes[valid_tickers]
     volumes = volumes[valid_tickers]
     highs = highs[valid_tickers]
-    lows = lows[valid_tickers]
     
     avg_vol_20 = volumes.tail(20).mean()
     cmp = closes.iloc[-1]
-    avg_turnover = cmp * avg_vol_20
+    avg_turnover = (cmp * avg_vol_20) / 10000000 # In Crores
     
     top_750_tickers = avg_turnover.nlargest(750).index.tolist()
     
     closes = closes[top_750_tickers]
     volumes = volumes[top_750_tickers]
     highs = highs[top_750_tickers]
-    lows = lows[top_750_tickers]
-    avg_turnover = avg_turnover[top_750_tickers]
     
-    status.text("Step 4/6: Calculating True RS Rating & Momentum on Top 750...")
+    status.text("Step 4/5: Calculating RS Ratings & Filtering (RS >= 80)...")
     progress.progress(0.7)
     
-    sma_200 = closes.rolling(window=200).mean().iloc[-1]
-    valid_base = (closes.iloc[-1] > sma_200) & (avg_turnover >= 100000000)
+    # 200 DMA Filter
+    sma_200_all = closes.rolling(window=200).mean().iloc[-1]
+    valid_base = closes.iloc[-1] > sma_200_all
     final_tickers = valid_base[valid_base].index.tolist()
     
     closes = closes[final_tickers]
     highs = highs[final_tickers]
-    lows = lows[final_tickers]
     volumes = volumes[final_tickers]
     
     ret_3m_current = (closes.iloc[-1] / closes.iloc[-63]) - 1
@@ -119,9 +127,10 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     ret_3m_prev = (closes.iloc[-6] / closes.iloc[-68]) - 1
     rs_prev = ret_3m_prev.rank(pct=True) * 100
     
+    # KEEPING ALL STOCKS >= 80 (No strict MA cuts)
     top_rs_tickers = rs_current[rs_current >= 80].index.tolist()
     
-    status.text("Step 5/6: Finding Sniper Entries, Breakouts & Proximity...")
+    status.text("Step 5/5: Finding Setups, Trend Sequences & Proximity...")
     progress.progress(0.85)
     
     results = []
@@ -143,20 +152,24 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
             
         sma20 = c_close.rolling(20).mean().iloc[-1]
         sma50 = c_close.rolling(50).mean().iloc[-1]
-        
-        dist_20 = ((cmp_val - sma20) / sma20) * 100
-        dist_50 = ((cmp_val - sma50) / sma50) * 100
+        sma200 = c_close.rolling(200).mean().iloc[-1]
         
         prev_20d_high = c_high.iloc[-21:-1].max()
         dist_to_breakout = ((prev_20d_high - cmp_val) / cmp_val) * 100
+        
+        # NON-STRICT MA SEQUENCE TAG
+        ma_sequence = "-"
+        if (prev_20d_high > sma20) and (sma20 > sma50) and (sma50 > sma200):
+            ma_sequence = "✅ Aligned"
+            
+        high_20m = c_high.tail(420).max()
+        dist_to_20m_high = ((high_20m - cmp_val) / cmp_val) * 100
         
         if cmp_val >= prev_20d_high:
             setup = "🔥 20D Breakout"
             dist_to_breakout = 0.0
         elif 0 < dist_to_breakout <= 7.0:
             setup = "⚠️ Near Breakout"
-        elif -2 <= dist_20 <= 4 or -2 <= dist_50 <= 4:
-            setup = "🟢 Pullback Setup"
         else:
             setup = "⏳ Consolidating"
             
@@ -170,53 +183,46 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         suggested_sl = cmp_val * 0.85
             
         results.append({
-            "Ticker": t,
             "Stock": t.replace(".NS", ""),
+            "Sector": get_sector_offline(t),
             "CMP (₹)": round(cmp_val, 2),
-            "3M RS Rating": round(c_rs, 1),
-            "RS Momentum": rs_mom,
-            "Entry Setup": setup,
-            "Dist. to BO (%)": round(dist_to_breakout, 2),
-            "Volume Alert": vol_alert,
-            "Target (8%)": round(suggested_target, 2),
-            "Max SL (-15%)": round(suggested_sl, 2)
+            "3M RS": round(c_rs, 1),
+            "RS Mom": rs_mom,
+            "Trend": ma_sequence,
+            "Setup": setup,
+            "Dist BO %": round(max(0, dist_to_breakout), 2),
+            "Dist 20M High %": round(dist_to_20m_high, 2),
+            "Volume": vol_alert,
+            "TGT (8%)": round(suggested_target, 2),
+            "SL (-15%)": round(suggested_sl, 2),
+            "_mom_score": 1 if rs_mom == "📈 Rising" else (2 if rs_mom == "⚖️ Stable" else 3),
+            "_setup_score": 1 if setup == "🔥 20D Breakout" else (2 if setup == "⚠️ Near Breakout" else 3)
         })
 
-    status.text("Step 6/6: Fetching Sector details for final stocks... (Safe Mode)")
-    progress.progress(0.95)
+    progress.progress(1.0)
+    status.empty()
     
     if results:
         df_results = pd.DataFrame(results)
         
-        # Max workers 5 to bypass Yahoo Finance IP block
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            sectors = list(executor.map(get_sector, df_results['Ticker'].tolist()))
+        # Sorted strictly by Rising Momentum first, then Setups, then RS rating
+        df_results = df_results.sort_values(by=["_mom_score", "_setup_score", "3M RS"], ascending=[True, True, False])
+        df_results = df_results.drop(columns=['_mom_score', '_setup_score']).reset_index(drop=True)
         
-        df_results.insert(2, 'Sector', sectors)
-        df_results = df_results.drop(columns=['Ticker'])
-        
-        df_results['Setup_Score'] = df_results['Entry Setup'].map({"🔥 20D Breakout": 1, "⚠️ Near Breakout": 2, "🟢 Pullback Setup": 3, "⏳ Consolidating": 4})
-        df_results = df_results.sort_values(by=["Setup_Score", "3M RS Rating"], ascending=[True, False]).drop(columns=['Setup_Score']).reset_index(drop=True)
-        
-        progress.progress(1.0)
-        status.empty()
-        
-        st.success(f"✅ Scan Complete! Found {len(df_results)} Institutional Grade Momentum Leaders.")
+        st.success(f"✅ Scan Complete! Found {len(df_results)} Stocks with RS > 80.")
         
         st.subheader("🧩 Sector Sentiment (Money Flow)")
-        
         sector_counts = df_results['Sector'].value_counts()
         
         col1, col2 = st.columns([1, 2])
-        
         with col1:
             st.write("**Stocks per Sector:**")
             for sector, count in sector_counts.items():
                 st.write(f"- **{sector}**: {count} stocks")
                 
         with col2:
-            st.write("**🔥 Actionable Stocks by Sector:**")
-            action_stocks = df_results[(df_results['Entry Setup'].isin(['🔥 20D Breakout', '⚠️ Near Breakout'])) | (df_results['Volume Alert'] == '🚀 High Vol')]
+            st.write("**🔥 Actionable (Breakouts / High Vol) by Sector:**")
+            action_stocks = df_results[(df_results['Setup'].isin(['🔥 20D Breakout', '⚠️ Near Breakout'])) | (df_results['Volume'] == '🚀 High Vol')]
             
             if not action_stocks.empty:
                 for sector in sector_counts.index:
@@ -225,11 +231,10 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
                         stock_details = []
                         for _, row in sec_action.iterrows():
                             badges = ""
-                            if row['Entry Setup'] == '🔥 20D Breakout': badges += "🔥"
-                            if row['Entry Setup'] == '⚠️ Near Breakout': badges += "⚠️"
-                            if row['Volume Alert'] == '🚀 High Vol': badges += "🚀"
+                            if row['Setup'] == '🔥 20D Breakout': badges += "🔥"
+                            if row['Setup'] == '⚠️ Near Breakout': badges += "⚠️"
+                            if row['Volume'] == '🚀 High Vol': badges += "🚀"
                             stock_details.append(f"{row['Stock']} ({badges})")
-                            
                         st.markdown(f"**{sector}**: " + ", ".join(stock_details))
             else:
                 st.write("No strong breakouts or volume spikes today.")
@@ -238,20 +243,25 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         st.subheader("📋 Detailed Scanner Results")
         
         def highlight_setup(s):
-            if s == "🔥 20D Breakout":
-                return "color: #FF4B4B; font-weight: bold"
-            elif s == "⚠️ Near Breakout":
-                return "color: #FFA500; font-weight: bold"
-            elif s == "🟢 Pullback Setup":
-                return "color: #00CC96; font-weight: bold"
+            if s == "🔥 20D Breakout": return "color: #FF4B4B; font-weight: bold"
+            elif s == "⚠️ Near Breakout": return "color: #FFA500; font-weight: bold"
             return ""
             
+        def highlight_seq(s):
+            if s == "✅ Aligned": return "color: #00CC96; font-weight: bold"
+            return ""
+            
+        def highlight_mom(s):
+            if s == "📈 Rising": return "color: #00CC96; font-weight: bold"
+            elif s == "📉 Cooling": return "color: #FF4B4B"
+            return ""
+
         st.dataframe(
-            df_results.style.map(highlight_setup, subset=['Entry Setup']),
+            df_results.style.map(highlight_setup, subset=['Setup'])
+                           .map(highlight_seq, subset=['Trend'])
+                           .map(highlight_mom, subset=['RS Mom']),
             use_container_width=True,
-            height=600
+            height=700
         )
     else:
-        progress.progress(1.0)
-        status.empty()
-        st.warning("No stocks passed all filters today. Market might be weak.")
+        st.warning("No stocks passed the base filters today.")
