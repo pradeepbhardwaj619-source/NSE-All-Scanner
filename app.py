@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
 import requests
 import io
 import time
@@ -9,6 +8,70 @@ import time
 st.set_page_config(page_title="Super RS Scanner", layout="wide")
 st.title("🦅 Super RS Scanner: Top 750 Liquid Universe")
 st.markdown("**(Top 750 Liquidity -> 200-DMA & 10Cr -> 3M RS >= 80 -> Sniper Entry & 20M High Check)**")
+
+# --- STATIC NSE SECTOR MAPPING (100% BLOCK-PROOF) ---
+NSE_SECTORS = {
+    # IT & Tech
+    "TCS": "Technology", "INFY": "Technology", "HCLTECH": "Technology", "WIPRO": "Technology", 
+    "LTIM": "Technology", "TECHM": "Technology", "PERSISTENT": "Technology", "COFORGE": "Technology",
+    "CYIENT": "Technology", "KPITTECH": "Technology", "TATAELXSI": "Technology", "MPHASIS": "Technology",
+    "OLECTRA": "Technology", "TANLA": "Technology", "OFSS": "Technology", "ZENTEC": "Technology",
+    
+    # Financials & Banks
+    "HDFCBANK": "Financials", "ICICIBANK": "Financials", "SBIN": "Financials", "KOTAKBANK": "Financials",
+    "AXISBANK": "Financials", "INDUSINDBK": "Financials", "BAJFINANCE": "Financials", "BAJAJFINSV": "Financials",
+    "CHOLAFIN": "Financials", "MUTHOOTFIN": "Financials", "RECLTD": "Financials", "PFC": "Financials",
+    "IREDA": "Financials", "JIOFIN": "Financials", "SOUTHBANK": "Financials", "DHANBANK": "Financials",
+    "MOTILALOFS": "Financials", "ANGELONE": "Financials", "BSE": "Financials", "MCX": "Financials",
+    "LICHSGFIN": "Financials", "PNB": "Financials", "KTKBANK": "Financials",
+    
+    # Healthcare & Pharma
+    "SUNPHARMA": "Healthcare", "CIPLA": "Healthcare", "DIVISLAB": "Healthcare", "DRREDDY": "Healthcare",
+    "APOLLOHOSP": "Healthcare", "MAXHEALTH": "Healthcare", "LUPIN": "Healthcare", "AUROPHARMA": "Healthcare",
+    "BIOCON": "Healthcare", "GLENMARK": "Healthcare", "SYNGENE": "Healthcare", "LAURUSLABS": "Healthcare",
+    "NATCOPHARM": "Healthcare", "GRANULES": "Healthcare", "ALEMBICLTD": "Healthcare", "GLAND": "Healthcare",
+    
+    # Auto & Ancillaries
+    "TATAMOTORS": "Auto", "M&M": "Auto", "MARUTI": "Auto", "BAJAJ-AUTO": "Auto", "EICHERMOT": "Auto",
+    "HEROMOTOCO": "Auto", "TVSMOTOR": "Auto", "ASHOKLEY": "Auto", "BOSCHLTD": "Auto", "MRF": "Auto",
+    "BALKRISIND": "Auto", "SONACOMS": "Auto", "MOTHERSON": "Auto", "SSWL": "Auto", "ALICON": "Auto",
+    "KROSS": "Auto", "MENONBE": "Auto",
+    
+    # Energy & Power
+    "RELIANCE": "Energy", "ONGC": "Energy", "NTPC": "Energy", "POWERGRID": "Energy", "TATAPOWER": "Energy",
+    "ADANIGREEN": "Energy", "ADANIPOWER": "Energy", "COALINDIA": "Energy", "IOC": "Energy", "BPCL": "Energy",
+    "GAIL": "Energy", "HINDOILEXP": "Energy", "SUZLON": "Energy", "NHPC": "Energy", "SJVN": "Energy",
+    
+    # Capital Goods, Defense & Infrastructure
+    "LT": "Capital Goods", "HAL": "Capital Goods", "BEL": "Capital Goods", "BHEL": "Capital Goods",
+    "SIEMENS": "Capital Goods", "ABB": "Capital Goods", "CUMMINSIND": "Capital Goods", "CGPOWER": "Capital Goods",
+    "BDL": "Capital Goods", "MAZDOCK": "Capital Goods", "COCHINSHIP": "Capital Goods", "GRSE": "Capital Goods",
+    "TITAGARH": "Capital Goods", "RVNL": "Capital Goods", "IRFC": "Capital Goods", "IRCON": "Capital Goods",
+    "ENGINERSIN": "Capital Goods",
+    
+    # Consumer & Retail
+    "HUL": "Consumer", "ITC": "Consumer", "NESTLEIND": "Consumer", "BRITANNIA": "Consumer", "TATACONSUM": "Consumer",
+    "TITAN": "Consumer", "ASIANPAINT": "Consumer", "PIDILITIND": "Consumer", "TRENT": "Consumer",
+    "ZOMATO": "Consumer", "DMART": "Consumer", "NYKAA": "Consumer", "RAYMOND": "Consumer", "STYLEBAAZA": "Consumer",
+    "PARAGMILK": "Consumer",
+    
+    # Basic Materials, Metals & Chemicals
+    "TATASTEEL": "Materials", "JSWSTEEL": "Materials", "HINDALCO": "Materials", "COALINDIA": "Materials",
+    "VEDL": "Materials", "SRF": "Materials", "PIIND": "Materials", "TATACHEM": "Materials", "DEEPAKNTR": "Materials",
+    "AARTIIND": "Materials", "CHEMPLASTS": "Materials", "SHYAMMETL": "Materials",
+    
+    # Realty & Hospitality
+    "DLF": "Realty", "MACROTECH": "Realty", "GODREJPROP": "Realty", "OBEROIRLTY": "Realty", "PRESTIGE": "Realty",
+    "INDHOTEL": "Realty", "CHALET": "Realty", "LEMONTREE": "Realty", "THELEELA": "Realty", "ORIENTHOT": "Realty",
+    
+    # Media & Telecom
+    "BHARTIARTL": "Telecom", "IDEA": "Telecom", "INDUSTOWER": "Telecom", "SUNTV": "Media", "ZEEL": "Media",
+    "PVRINOX": "Media", "SAREGAMA": "Media", "TIPSMUSIC": "Media"
+}
+
+def get_sector_offline(ticker):
+    clean_ticker = ticker.replace(".NS", "")
+    return NSE_SECTORS.get(clean_ticker, "Other / Emerging")
 
 @st.cache_data(ttl=86400)
 def get_all_nse():
@@ -22,40 +85,18 @@ def get_all_nse():
         df = df[df['SERIES'].str.strip() == 'EQ']
     return [str(sym).strip() + ".NS" for sym in df['SYMBOL'].tolist()]
 
-# --- SAFE SECTOR FETCHING (ANTI-BLOCK LOGIC) ---
-def get_sector(ticker):
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    })
-    
-    for attempt in range(2):
-        try:
-            info = yf.Ticker(ticker, session=session).info
-            sector = info.get('sector', 'Unknown')
-            if sector and sector != 'Unknown':
-                return sector
-            time.sleep(0.5) 
-        except Exception:
-            time.sleep(0.5)
-            continue
-            
-    return 'Unknown'
-
-if st.button("🚀 Start Super Scan (~1.5 Min)"):
+if st.button("🚀 Start Super Scan (~1 Min)"):
     status = st.empty()
     progress = st.progress(0)
     
-    # 1. Fetch NSE Tickers
-    status.text("Step 1/6: Fetching NSE Equities...")
+    status.text("Step 1/5: Fetching NSE Equities...")
     try:
         tickers = get_all_nse()
     except Exception as e:
         st.error(f"List Fetch Error: {e}")
         st.stop()
     
-    # 2. Downloading 2 YEARS of data (to calculate 20-Month High which is ~420 trading days)
-    status.text(f"Step 2/6: Downloading 2 Years Data for {len(tickers)} Stocks...")
+    status.text(f"Step 2/5: Downloading 2 Years Data for {len(tickers)} Stocks...")
     progress.progress(0.1)
     
     chunk_size = 500
@@ -64,7 +105,7 @@ if st.button("🚀 Start Super Scan (~1.5 Min)"):
     
     for i in range(0, len(tickers), chunk_size):
         chunk = tickers[i:i + chunk_size]
-        status.text(f"Step 2/6: Downloading Data... Batch {i//chunk_size + 1}/{total_batches}")
+        status.text(f"Step 2/5: Downloading Data... Batch {i//chunk_size + 1}/{total_batches}")
         df_chunk = yf.download(chunk, period="2y", group_by="ticker", progress=False, threads=True)
         data_frames.append(df_chunk)
         progress.progress(0.1 + (0.3 * (i / len(tickers))))
@@ -84,8 +125,7 @@ if st.button("🚀 Start Super Scan (~1.5 Min)"):
         st.error(f"Extraction Error: {e}")
         st.stop()
         
-    # 3. Liquidity Filter
-    status.text("Step 3/6: Filtering Top 750 by Liquidity (Anti-Operator Game)...")
+    status.text("Step 3/5: Filtering Top 750 by Liquidity (Anti-Operator Game)...")
     progress.progress(0.5)
     
     valid_counts = closes.notna().sum()
@@ -108,8 +148,7 @@ if st.button("🚀 Start Super Scan (~1.5 Min)"):
     lows = lows[top_750_tickers]
     avg_turnover = avg_turnover[top_750_tickers]
     
-    # 4. True RS Rating & Momentum
-    status.text("Step 4/6: Calculating True RS Rating & Momentum on Top 750...")
+    status.text("Step 4/5: Calculating True RS Rating & Momentum on Top 750...")
     progress.progress(0.7)
     
     sma_200 = closes.rolling(window=200).mean().iloc[-1]
@@ -129,8 +168,7 @@ if st.button("🚀 Start Super Scan (~1.5 Min)"):
     
     top_rs_tickers = rs_current[rs_current >= 80].index.tolist()
     
-    # 5. Finding Sniper Entries & 20M Highs
-    status.text("Step 5/6: Finding Sniper Entries, 20M Highs & Breakouts...")
+    status.text("Step 5/5: Finding Sniper Entries, 20M Highs & Lightning Fast Sectors...")
     progress.progress(0.85)
     
     results = []
@@ -184,10 +222,13 @@ if st.button("🚀 Start Super Scan (~1.5 Min)"):
             
         suggested_target = cmp_val * 1.08
         suggested_sl = cmp_val * 0.85
+        
+        # --- INSTANT SECTOR FETCH (No API Calls!) ---
+        sector_name = get_sector_offline(t)
             
         results.append({
-            "Ticker": t,
             "Stock": t.replace(".NS", ""),
+            "Sector": sector_name,
             "CMP (₹)": round(cmp_val, 2),
             "3M RS Rating": round(c_rs, 1),
             "Super Setup": super_setup, 
@@ -199,22 +240,10 @@ if st.button("🚀 Start Super Scan (~1.5 Min)"):
             "Max SL (-15%)": round(suggested_sl, 2)
         })
 
-    # 6. Sector Fetching (SEQUENTIAL & SAFE MODE to prevent "Unknown" block)
-    status.text("Step 6/6: Fetching Sectors Slowly to Bypass Yahoo Block...")
     progress.progress(0.95)
     
     if results:
         df_results = pd.DataFrame(results)
-        
-        sectors = []
-        for idx, row in df_results.iterrows():
-            sec = get_sector(row['Ticker'])
-            sectors.append(sec)
-            status.text(f"Step 6/6: Fetching Sectors... ({idx+1}/{len(results)})")
-            time.sleep(0.3) # Delay to prevent getting blocked by Yahoo Finance
-            
-        df_results.insert(2, 'Sector', sectors)
-        df_results = df_results.drop(columns=['Ticker'])
         
         df_results['Setup_Score'] = df_results['Entry Setup'].map({"🔥 20D Breakout": 1, "⚠️ Near Breakout": 2, "🟢 Pullback Setup": 3, "⏳ Consolidating": 4})
         df_results['Super_Score'] = df_results['Super Setup'].map({"⭐ A+ 20M High": 1, "": 2})
