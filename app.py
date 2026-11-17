@@ -6,9 +6,9 @@ import requests
 import io
 import time
 
-st.set_page_config(page_title="My Private MarketSmith", layout="wide")
+st.set_page_config(page_title="My Private Market Scanner", layout="wide")
 
-# --- STATIC NSE SECTOR MAPPING ---
+# --- STATIC NSE SECTOR MAPPING (100% BLOCK-PROOF) ---
 NSE_SECTORS = {
     "TCS": "Technology", "INFY": "Technology", "HCLTECH": "Technology", "WIPRO": "Technology", 
     "HDFCBANK": "Financials", "ICICIBANK": "Financials", "SBIN": "Financials", "KOTAKBANK": "Financials",
@@ -73,9 +73,10 @@ def fetch_and_prepare_data():
     dma_50 = closes.rolling(50).mean().iloc[-1]
     dma_200 = closes.rolling(200).mean().iloc[-1]
     
+    # RSI Calculations with Pandas Fixes ('W' and 'ME')
     rsi_daily = calculate_rsi(closes).iloc[-1]
-    rsi_weekly = calculate_rsi(closes.resample('W-FRI').last()).iloc[-1]
-    rsi_monthly = calculate_rsi(closes.resample('M').last()).iloc[-1]
+    rsi_weekly = calculate_rsi(closes.resample('W').last()).iloc[-1]
+    rsi_monthly = calculate_rsi(closes.resample('ME').last()).iloc[-1]
     
     vol_20_avg = volumes.tail(20).mean()
     vol_today = volumes.iloc[-1]
@@ -146,7 +147,7 @@ if st.sidebar.button("🔄 Force Refresh Market Data"):
 # ==========================================
 st.title("🦅 My Private Market Scanner")
 
-with st.spinner("Loading base market data... (Takes ~1 min only for the first time)"):
+with st.spinner("Loading base market data... (Takes ~1 min only for the first time today)"):
     df = fetch_and_prepare_data()
 
 if df.empty:
