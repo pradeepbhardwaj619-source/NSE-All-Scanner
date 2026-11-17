@@ -10,27 +10,20 @@ st.set_page_config(page_title="Super RS Scanner", layout="wide")
 st.title("🦅 Super RS Scanner: The Ultimate Momentum Setup")
 st.markdown("**Rules: Top 750 (10Cr+ T.O) -> 200 DMA -> 3M RS > 80 (ALL SHOWN) -> Sniper Entries**")
 
-# --- MASSIVE NSE500 SECTOR DICTIONARY (100% NO 'UNKNOWN') ---
+# --- YOUR PERSONAL GOOGLE SHEET WEBHOOK ---
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwkhNOJYeXvW1kSFWyXYFzbQmrLDhgQP71YM9bFI7FqnNw2In5ZnAGS0kxB7ntZIfWZ/exec"
+
+# --- MASSIVE NSE500 SECTOR DICTIONARY ---
 KNOWN_SECTORS = {
-    # IT & Software
     "TCS":"IT", "INFY":"IT", "HCLTECH":"IT", "WIPRO":"IT", "LTIM":"IT", "TECHM":"IT", "PERSISTENT":"IT", "COFORGE":"IT", "CYIENT":"IT", "KPITTECH":"IT", "TATAELXSI":"IT", "MPHASIS":"IT", "TANLA":"IT", "OFSS":"IT", "ZENTEC":"IT", "SONATSOFTW":"IT", "BSOFT":"IT", "INTELLECT":"IT", "MASTEK":"IT", "NEWGEN":"IT",
-    # Financials, Banks & Broking
     "HDFCBANK":"Finance", "ICICIBANK":"Finance", "SBIN":"Finance", "KOTAKBANK":"Finance", "AXISBANK":"Finance", "INDUSINDBK":"Finance", "BAJFINANCE":"Finance", "BAJAJFINSV":"Finance", "CHOLAFIN":"Finance", "MUTHOOTFIN":"Finance", "RECLTD":"Finance", "PFC":"Finance", "IREDA":"Finance", "JIOFIN":"Finance", "SOUTHBANK":"Finance", "DHANBANK":"Finance", "MOTILALOFS":"Finance", "ANGELONE":"Finance", "BSE":"Finance", "MCX":"Finance", "LICHSGFIN":"Finance", "PNB":"Finance", "KTKBANK":"Finance", "IDFCFIRSTB":"Finance", "YESBANK":"Finance", "CANBK":"Finance", "UNIONBANK":"Finance", "IOB":"Finance", "CUB":"Finance", "FEDERALBNK":"Finance", "ABCAPITAL":"Finance", "M&MFIN":"Finance", "SUNDARMFIN":"Finance", "POONAWALLA":"Finance", "IEX":"Finance", "CDSL":"Finance",
-    # Pharma, Healthcare & Hospitals
     "SUNPHARMA":"Pharma", "CIPLA":"Pharma", "DIVISLAB":"Pharma", "DRREDDY":"Pharma", "APOLLOHOSP":"Pharma", "MAXHEALTH":"Pharma", "LUPIN":"Pharma", "AUROPHARMA":"Pharma", "BIOCON":"Pharma", "GLENMARK":"Pharma", "SYNGENE":"Pharma", "LAURUSLABS":"Pharma", "NATCOPHARM":"Pharma", "GRANULES":"Pharma", "ALEMBICLTD":"Pharma", "GLAND":"Pharma", "YATHARTH":"Pharma", "MEDPLUS":"Pharma", "SANOFI":"Pharma", "ABBOTINDIA":"Pharma", "PFIZER":"Pharma", "FORTIS":"Pharma", "NARAYANA":"Pharma", "NH":"Pharma",
-    # Auto & Auto Ancillary
     "TATAMOTORS":"Auto", "M&M":"Auto", "MARUTI":"Auto", "BAJAJ-AUTO":"Auto", "EICHERMOT":"Auto", "HEROMOTOCO":"Auto", "TVSMOTOR":"Auto", "ASHOKLEY":"Auto", "BOSCHLTD":"Auto", "MRF":"Auto", "BALKRISIND":"Auto", "SONACOMS":"Auto", "MOTHERSON":"Auto", "SSWL":"Auto", "ALICON":"Auto", "KROSS":"Auto", "MENONBE":"Auto", "GREAVESCOT":"Auto", "AMARAJABAT":"Auto", "EXIDEIND":"Auto", "CEATLTD":"Auto", "APOLLOTYRE":"Auto", "MINDAIND":"Auto", "ENDURANCE":"Auto",
-    # Energy, Power, Gas & Oil
     "RELIANCE":"Energy", "ONGC":"Energy", "NTPC":"Energy", "POWERGRID":"Energy", "TATAPOWER":"Energy", "ADANIGREEN":"Energy", "ADANIPOWER":"Energy", "COALINDIA":"Energy", "IOC":"Energy", "BPCL":"Energy", "GAIL":"Energy", "HINDOILEXP":"Energy", "SUZLON":"Energy", "NHPC":"Energy", "SJVN":"Energy", "IGL":"Energy", "MGL":"Energy", "GUJGASLTD":"Energy", "PETRONET":"Energy", "OIL":"Energy", "TORNTPOWER":"Energy", "JSWENERGY":"Energy",
-    # Capital Goods, Defense, Cables & Rail
     "LT":"Cap Goods", "HAL":"Defense", "BEL":"Defense", "BHEL":"Cap Goods", "SIEMENS":"Cap Goods", "ABB":"Cap Goods", "CUMMINSIND":"Cap Goods", "CGPOWER":"Cap Goods", "BDL":"Defense", "MAZDOCK":"Defense", "COCHINSHIP":"Defense", "GRSE":"Defense", "TITAGARH":"Rail", "RVNL":"Rail", "IRFC":"Rail", "IRCON":"Rail", "ENGINERSIN":"Cap Goods", "POLYCAB":"Cap Goods", "KEI":"Cap Goods", "HAVELLS":"Cap Goods", "DIXON":"Cap Goods", "VOLTAS":"Cap Goods", "BLUESTARCO":"Cap Goods", "THERMAX":"Cap Goods", "AIAENG":"Cap Goods",
-    # FMCG, Retail & Consumer
     "HUL":"FMCG", "ITC":"FMCG", "NESTLEIND":"FMCG", "BRITANNIA":"FMCG", "TATACONSUM":"FMCG", "TITAN":"Consumer", "ASIANPAINT":"Consumer", "PIDILITIND":"Consumer", "TRENT":"Consumer", "ZOMATO":"Consumer", "DMART":"Consumer", "NYKAA":"Consumer", "RAYMOND":"Consumer", "STYLEBAAZA":"Consumer", "PARAGMILK":"FMCG", "MARICO":"FMCG", "DABUR":"FMCG", "GODREJCP":"FMCG", "COLPAL":"FMCG", "VARROC":"FMCG", "VBL":"FMCG", "RADICO":"FMCG", "UBL":"FMCG", "PAGEIND":"Consumer", "BATAINDIA":"Consumer",
-    # Metals, Mining & Chemicals
     "TATASTEEL":"Metals", "JSWSTEEL":"Metals", "HINDALCO":"Metals", "VEDL":"Metals", "SRF":"Chemicals", "PIIND":"Chemicals", "TATACHEM":"Chemicals", "DEEPAKNTR":"Chemicals", "AARTIIND":"Chemicals", "CHEMPLASTS":"Chemicals", "SHYAMMETL":"Metals", "SAIL":"Metals", "NMDC":"Metals", "NATIONALUM":"Metals", "JINDALSTEL":"Metals", "UPL":"Chemicals", "COROMANDEL":"Chemicals", "NAVINFLUOR":"Chemicals", "ATUL":"Chemicals", "GUJALKALI":"Chemicals",
-    # Realty, Cements & Infrastructure
     "DLF":"Realty", "MACROTECH":"Realty", "GODREJPROP":"Realty", "OBEROIRLTY":"Realty", "PRESTIGE":"Realty", "ULTRACEMCO":"Cement", "SHREECEM":"Cement", "AMBUJACEM":"Cement", "ACC":"Cement", "DALBHARAT":"Cement", "RAMCOCEM":"Cement", "JKCEMENT":"Cement", "LODHA":"Realty", "SOBHA":"Realty", "BRIGADE":"Realty",
-    # Media, Telecom & Hotels
     "BHARTIARTL":"Telecom", "IDEA":"Telecom", "INDUSTOWER":"Telecom", "SUNTV":"Media", "ZEEL":"Media", "PVRINOX":"Media", "SAREGAMA":"Media", "TIPSMUSIC":"Media", "INDHOTEL":"Hotels", "CHALET":"Hotels", "LEMONTREE":"Hotels", "THELEELA":"Hotels", "ORIENTHOT":"Hotels", "TATACOMM":"Telecom"
 }
 
@@ -101,7 +94,7 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     
     avg_vol_20 = volumes.tail(20).mean()
     cmp = closes.iloc[-1]
-    avg_turnover = (cmp * avg_vol_20) / 10000000 # In Crores
+    avg_turnover = (cmp * avg_vol_20) / 10000000 
     
     top_750_tickers = avg_turnover.nlargest(750).index.tolist()
     
@@ -112,7 +105,6 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     status.text("Step 4/5: Calculating RS Ratings & Filtering (RS >= 80)...")
     progress.progress(0.7)
     
-    # 200 DMA Filter
     sma_200_all = closes.rolling(window=200).mean().iloc[-1]
     valid_base = closes.iloc[-1] > sma_200_all
     final_tickers = valid_base[valid_base].index.tolist()
@@ -127,7 +119,6 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     ret_3m_prev = (closes.iloc[-6] / closes.iloc[-68]) - 1
     rs_prev = ret_3m_prev.rank(pct=True) * 100
     
-    # KEEPING ALL STOCKS >= 80 (No strict MA cuts)
     top_rs_tickers = rs_current[rs_current >= 80].index.tolist()
     
     status.text("Step 5/5: Finding Setups, Trend Sequences & Proximity...")
@@ -143,12 +134,9 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         c_rs = rs_current[t]
         p_rs = rs_prev[t]
         
-        if c_rs > p_rs + 2:
-            rs_mom = "📈 Rising"
-        elif c_rs < p_rs - 2:
-            rs_mom = "📉 Cooling"
-        else:
-            rs_mom = "⚖️ Stable"
+        if c_rs > p_rs + 2: rs_mom = "📈 Rising"
+        elif c_rs < p_rs - 2: rs_mom = "📉 Cooling"
+        else: rs_mom = "⚖️ Stable"
             
         sma20 = c_close.rolling(20).mean().iloc[-1]
         sma50 = c_close.rolling(50).mean().iloc[-1]
@@ -157,7 +145,6 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         prev_20d_high = c_high.iloc[-21:-1].max()
         dist_to_breakout = ((prev_20d_high - cmp_val) / cmp_val) * 100
         
-        # NON-STRICT MA SEQUENCE TAG
         ma_sequence = "-"
         if (prev_20d_high > sma20) and (sma20 > sma50) and (sma50 > sma200):
             ma_sequence = "✅ Aligned"
@@ -165,19 +152,13 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         high_20m = c_high.tail(420).max()
         dist_to_20m_high = ((high_20m - cmp_val) / cmp_val) * 100
         
-        if cmp_val >= prev_20d_high:
-            setup = "🔥 20D Breakout"
-            dist_to_breakout = 0.0
-        elif 0 < dist_to_breakout <= 7.0:
-            setup = "⚠️ Near Breakout"
-        else:
-            setup = "⏳ Consolidating"
+        if cmp_val >= prev_20d_high: setup = "🔥 20D Breakout"
+        elif 0 < dist_to_breakout <= 7.0: setup = "⚠️ Near Breakout"
+        else: setup = "⏳ Consolidating"
             
         vol_20_avg = c_vol.iloc[-21:-1].mean()
-        if c_vol.iloc[-1] > (1.5 * vol_20_avg):
-            vol_alert = "🚀 High Vol"
-        else:
-            vol_alert = "-"
+        if c_vol.iloc[-1] > (1.5 * vol_20_avg): vol_alert = "🚀 High Vol"
+        else: vol_alert = "-"
             
         suggested_target = cmp_val * 1.08
         suggested_sl = cmp_val * 0.85
@@ -204,12 +185,31 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
     
     if results:
         df_results = pd.DataFrame(results)
-        
-        # Sorted strictly by Rising Momentum first, then Setups, then RS rating
         df_results = df_results.sort_values(by=["_mom_score", "_setup_score", "3M RS"], ascending=[True, True, False])
         df_results = df_results.drop(columns=['_mom_score', '_setup_score']).reset_index(drop=True)
         
         st.success(f"✅ Scan Complete! Found {len(df_results)} Stocks with RS > 80.")
+        
+        # --- NEW INTEGRATED BUTTON TO UPDATE GOOGLE SHEET ---
+        st.divider()
+        col_btn, col_msg = st.columns([1, 3])
+        with col_btn:
+            push_clicked = st.button("📤 Push to Google Sheet")
+            
+        if push_clicked:
+            with st.spinner("Pushing stocks to your Google Sheet..."):
+                # Format to "NSE:TCS" for your Google Finance formulas
+                stock_list = ["NSE:" + s for s in df_results['Stock'].tolist()]
+                payload = {"stocks": stock_list}
+                try:
+                    res = requests.post(WEBHOOK_URL, json=payload)
+                    if res.status_code == 200:
+                        st.success(f"✅ Successfully sent {len(stock_list)} stocks to your sheet!")
+                    else:
+                        st.error(f"❌ Error from Google: {res.text}")
+                except Exception as e:
+                    st.error(f"Connection Error: {e}")
+        st.divider()
         
         st.subheader("🧩 Sector Sentiment (Money Flow)")
         sector_counts = df_results['Sector'].value_counts()
@@ -223,7 +223,6 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
         with col2:
             st.write("**🔥 Actionable (Breakouts / High Vol) by Sector:**")
             action_stocks = df_results[(df_results['Setup'].isin(['🔥 20D Breakout', '⚠️ Near Breakout'])) | (df_results['Volume'] == '🚀 High Vol')]
-            
             if not action_stocks.empty:
                 for sector in sector_counts.index:
                     sec_action = action_stocks[action_stocks['Sector'] == sector]
@@ -239,18 +238,14 @@ if st.button("🚀 Start Super Scan (~1 Min)"):
             else:
                 st.write("No strong breakouts or volume spikes today.")
                 
-        st.divider()
         st.subheader("📋 Detailed Scanner Results")
-        
         def highlight_setup(s):
             if s == "🔥 20D Breakout": return "color: #FF4B4B; font-weight: bold"
             elif s == "⚠️ Near Breakout": return "color: #FFA500; font-weight: bold"
             return ""
-            
         def highlight_seq(s):
             if s == "✅ Aligned": return "color: #00CC96; font-weight: bold"
             return ""
-            
         def highlight_mom(s):
             if s == "📈 Rising": return "color: #00CC96; font-weight: bold"
             elif s == "📉 Cooling": return "color: #FF4B4B"
