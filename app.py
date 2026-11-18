@@ -103,13 +103,15 @@ for tf, periods in ema_sel.items():
     for p in periods:
         f = f[f[f"EMA{p}_{tf}"] > 0]
 
-if "DistBO" in f.columns:
+if "Brk" in f.columns:
+    is_brk = f["Brk"] == 1
+    is_near = (~is_brk) & (f["DistBO"] <= bo_dist)
     if bo_mode == "Only Breakout":
-        f = f[f["DistBO"] <= 0]
+        f = f[is_brk]
     elif bo_mode == "Only Near":
-        f = f[(f["DistBO"] > 0) & (f["DistBO"] <= bo_dist)]
+        f = f[is_near]
     elif bo_mode == "Breakout + Near":
-        f = f[f["DistBO"] <= bo_dist]
+        f = f[is_brk | is_near]
 elif bo_mode != "All":
     st.warning("Breakout data abhi nahi bana. GitHub Actions me Update Data dobara run karo.")
 
@@ -125,16 +127,16 @@ f = f.sort_values(rs_col, ascending=False).copy()
 st.success(f"{len(f)} stocks mile (total {len(df)} scanned)")
 
 cols = ["Stock", "Price"]
-if "DistBO" in f.columns:
-    f["Setup"] = np.where(f["DistBO"] <= 0, "Breakout", np.where(f["DistBO"] <= bo_dist, "Near", "-"))
-    cols += ["High20D", "DistBO", "Setup"]
+if "Brk" in f.columns:
+    f["Setup"] = np.where(f["Brk"] == 1, "Breakout", np.where(f["DistBO"] <= bo_dist, "Near", "-"))
+    cols += ["High20D", "DistBO", "BreakLevel", "Setup"]
 cols += [rs_col]
 if has_prev:
     cols += [prev_col, "RS Chg", "RS Trend"]
 cols += ["MCap(Cr)", "VolRatio", "RSI_D", "RSI_W", "RSI_M"]
 cols += [f"EMA{p}_{tf}" for tf, ps in EMA_PERIODS.items() for p in ps]
 
-rename = {rs_col: "RS 3M", "VolRatio": "Vol x", "DistBO": "Dist to 20D High %"}
+rename = {rs_col: "RS 3M", "VolRatio": "Vol x", "DistBO": "Dist to 20D High %", "BreakLevel": "Prev 20D High"}
 if has_prev:
     rename[prev_col] = "RS Prev"
 show = f[cols].rename(columns=rename)
@@ -144,5 +146,6 @@ show["MCap(Cr)"] = show["MCap(Cr)"].round(0)
 st.dataframe(show, use_container_width=True, height=700, hide_index=True)
 st.download_button("⬇️ CSV download", show.to_csv(index=False), "scan.csv")
 st.caption(f"RS Prev = {cmp_label} ka RS rating. RS Chg = RS 3M minus RS Prev (jaise 60 se 80 = +20, Rising).")
-st.caption("20D High = pichle 20 din (aaj ko chhod ke) ka sabse high. Dist to 20D High % = price ko high tak pahunchne ke liye kitna % badhna hai (0 ya minus = breakout ho chuka).")
+st.caption("20D High = last 20 candles (aaj ki candle ke saath) ka sabse high, TradingView ke 20 period Donchian upper jaisa. Dist to 20D High % = price us high se kitna neeche hai (0 = high par).")
+st.caption("Prev 20D High = aaj ko chhod ke pichle 20 din ka high (breakout level). Setup = Breakout jab price ne is level ko paar kiya, Near jab breakout nahi hua par 20D High ke paas hai.")
 st.caption("EMA columns = price EMA se kitne % door hai (+ matlab EMA ke upar). Market cap sirf top 1000 liquid stocks ka hai.")
