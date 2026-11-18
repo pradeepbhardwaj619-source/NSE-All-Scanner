@@ -94,7 +94,8 @@ def main():
                 continue
             c, v = d["Close"], d["Volume"]
             avg20 = v.iloc[-21:-1].mean()
-            high20 = float(d["High"].iloc[-21:-1].max())
+            high20 = float(d["High"].iloc[-20:].max())
+            prev_high20 = float(d["High"].iloc[-21:-1].max())
             row = {
                 "Stock": sym,
                 "Price": round(float(c.iloc[-1]), 2),
@@ -104,6 +105,8 @@ def main():
                 "Ret3M_1M": float(c.iloc[-22] / c.iloc[-85] - 1) * 100,
                 "High20D": round(high20, 2),
                 "DistBO": round((high20 / float(c.iloc[-1]) - 1) * 100, 2),
+                "BreakLevel": round(prev_high20, 2),
+                "Brk": int(float(c.iloc[-1]) > prev_high20),
                 "VolRatio": float(v.iloc[-1] / avg20) if avg20 > 0 else np.nan,
                 "Turnover(Cr)": float(c.iloc[-1] * v.tail(20).mean() / 1e7),
             }
