@@ -94,10 +94,16 @@ def main():
                 continue
             c, v = d["Close"], d["Volume"]
             avg20 = v.iloc[-21:-1].mean()
+            high20 = float(d["High"].iloc[-21:-1].max())
             row = {
                 "Stock": sym,
                 "Price": round(float(c.iloc[-1]), 2),
                 "Ret3M": float(c.iloc[-1] / c.iloc[-64] - 1) * 100,
+                "Ret3M_1W": float(c.iloc[-6] / c.iloc[-69] - 1) * 100,
+                "Ret3M_2W": float(c.iloc[-11] / c.iloc[-74] - 1) * 100,
+                "Ret3M_1M": float(c.iloc[-22] / c.iloc[-85] - 1) * 100,
+                "High20D": round(high20, 2),
+                "DistBO": round((high20 / float(c.iloc[-1]) - 1) * 100, 2),
                 "VolRatio": float(v.iloc[-1] / avg20) if avg20 > 0 else np.nan,
                 "Turnover(Cr)": float(c.iloc[-1] * v.tail(20).mean() / 1e7),
             }
@@ -117,13 +123,16 @@ def main():
     df = pd.DataFrame(rows)
     print("Stocks processed:", len(df))
 
-    for name, mem in members.items():
-        col = f"RS_{name}"
-        df[col] = np.nan
+    lags = {"": "Ret3M", "_1W": "Ret3M_1W", "_2W": "Ret3M_2W", "_1M": "Ret3M_1M"}
+    universes = dict(members)
+    universes["All NSE"] = set(df["Stock"])
+    for name, mem in universes.items():
         mask = df["Stock"].isin(mem)
-        if mask.sum() > 0:
-            df.loc[mask, col] = (df.loc[mask, "Ret3M"].rank(pct=True) * 98 + 1).round(0)
-    df["RS_All NSE"] = (df["Ret3M"].rank(pct=True) * 98 + 1).round(0)
+        for suffix, ret_col in lags.items():
+            col = f"RS_{name}{suffix}"
+            df[col] = np.nan
+            if mask.sum() > 0:
+                df.loc[mask, col] = (df.loc[mask, ret_col].rank(pct=True) * 98 + 1).round(0)
 
     top = df.nlargest(1000, "Turnover(Cr)")["Stock"].tolist()
 
