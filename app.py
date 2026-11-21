@@ -70,12 +70,26 @@ p1, p2 = sb.columns(2)
 price_min = p1.number_input("Min ", 0, 1_000_000, 0, 50)
 price_max = p2.number_input("Max ", 0, 1_000_000, 1_000_000, 50)
 
+sb.subheader("Liquidity")
+turn_min = sb.number_input("Min avg turnover (Cr/day)", 0.0, 100000.0, 0.0, 0.5)
+
+series_sel = []
+if "Series" in df.columns:
+    sb.subheader("NSE Series")
+    series_all = sorted(df["Series"].dropna().unique().tolist())
+    series_sel = sb.multiselect(
+        "EQ = normal, BE = trade-to-trade, SM/ST = SME",
+        series_all,
+        default=series_all,
+    )
+
 rs_col = f"RS_{uni}"
 prev_col = f"RS_{uni}{CMP[cmp_label]}"
 has_prev = prev_col in df.columns
 
 f = df.copy()
-f = f[f[rs_col] >= rs_min]
+if rs_min > 1:
+    f = f[f[rs_col] >= rs_min]
 f = f.copy()
 
 if has_prev:
@@ -121,19 +135,25 @@ if vol_min > 0:
 if mcap_min > 0 or mcap_max < 10_000_000:
     f = f[f["MCap(Cr)"].between(mcap_min, mcap_max)]
 
+if turn_min > 0:
+    f = f[f["Turnover(Cr)"] >= turn_min]
+
+if series_sel:
+    f = f[f["Series"].isin(series_sel)]
+
 f = f[f["Price"].between(price_min, price_max)]
 f = f.sort_values(rs_col, ascending=False).copy()
 
 st.success(f"{len(f)} stocks mile (total {len(df)} scanned)")
 
-cols = ["Stock", "Price"]
+cols = ["Stock"] + (["Series"] if "Series" in f.columns else []) + ["Price"]
 if "Brk" in f.columns:
     f["Setup"] = np.where(f["Brk"] == 1, "Breakout", np.where(f["DistBO"] <= bo_dist, "Near", "-"))
     cols += ["High20D", "DistBO", "BreakLevel", "Setup"]
 cols += [rs_col]
 if has_prev:
     cols += [prev_col, "RS Chg", "RS Trend"]
-cols += ["MCap(Cr)", "VolRatio", "RSI_D", "RSI_W", "RSI_M"]
+cols += ["MCap(Cr)", "Turnover(Cr)", "VolRatio", "RSI_D", "RSI_W", "RSI_M"]
 cols += [f"EMA{p}_{tf}" for tf, ps in EMA_PERIODS.items() for p in ps]
 
 rename = {rs_col: "RS 3M", "VolRatio": "Vol x", "DistBO": "Dist to 20D High %", "BreakLevel": "Prev 20D High"}
@@ -142,10 +162,11 @@ if has_prev:
 show = f[cols].rename(columns=rename)
 show["Vol x"] = show["Vol x"].round(2)
 show["MCap(Cr)"] = show["MCap(Cr)"].round(0)
+show["Turnover(Cr)"] = show["Turnover(Cr)"].round(2)
 
 st.dataframe(show, use_container_width=True, height=700, hide_index=True)
 st.download_button("⬇️ CSV download", show.to_csv(index=False), "scan.csv")
 st.caption(f"RS Prev = {cmp_label} ka RS rating. RS Chg = RS 3M minus RS Prev (jaise 60 se 80 = +20, Rising).")
 st.caption("20D High = last 20 candles (aaj ki candle ke saath) ka sabse high, TradingView ke 20 period Donchian upper jaisa. Dist to 20D High % = price us high se kitna neeche hai (0 = high par).")
 st.caption("Prev 20D High = aaj ko chhod ke pichle 20 din ka high (breakout level). Setup = Breakout jab price ne is level ko paar kiya, Near jab breakout nahi hua par 20D High ke paas hai.")
-st.caption("EMA columns = price EMA se kitne % door hai (+ matlab EMA ke upar). Market cap sirf top 1000 liquid stocks ka hai.")
+st.caption("EMA columns = price EMA se kitne % door hai (+ matlab EMA ke upar). Market cap sirf top 1500 liquid stocks ka hai. Nayi listing (3 mahine se kam) ka RS nahi banta.")
