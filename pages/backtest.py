@@ -1,232 +1,400 @@
+import io
+
+import numpy as np
+import pandas as pd
+import requests
 import streamlit as st
 import yfinance as yf
-import pandas as pd
-import numpy as np
-import datetime
-import requests
-import io
-import time
 
-st.set_page_config(page_title="Premium Sniper Backtester", layout="wide")
-st.title("📊 Premium Universe Sniper Backtest")
-st.write("Rules: 200-DMA & 10Cr -> Top 20% RS -> 20D Pullback -> Breaks 20D High -> Custom TGT & Custom SL")
+st.set_page_config(page_title="Backtest", layout="wide")
+st.title("🧪 Strategy Backtest")
 
-@st.cache_data(ttl=86400)
-def get_all_nse():
-    url = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    res = requests.get(url, headers=headers)
-    df = pd.read_csv(io.StringIO(res.text))
-    if ' SERIES' in df.columns:
-        df = df[df[' SERIES'].str.strip() == 'EQ']
-    elif 'SERIES' in df.columns:
-        df = df[df['SERIES'].str.strip() == 'EQ']
-    return [str(sym).strip() + ".NS" for sym in df['SYMBOL'].tolist()]
+UA = {"User-Agent": "Mozilla/5.0"}
+INDEX_URLS = {
+    "Nifty 50": "https://www.niftyindices.com/IndexConstituent/ind_nifty50list.csv",
+    "Nifty 100": "https://www.niftyindices.com/IndexConstituent/ind_nifty100list.csv",
+    "Nifty 500": "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv",
+    "Nifty Total Market": "https://www.niftyindices.com/IndexConstituent/ind_niftytotalmarket_list.csv",
+}
 
-# ==========================================
-# 🎛️ CUSTOM DROPDOWNS FOR TARGET & SL 
-# ==========================================
-st.markdown("### ⚙️ Strategy Settings")
-col1, col2 = st.columns(2)
 
-with col1:
-    target_choice = st.selectbox(
-        "🎯 Select Profit Target:", 
-        ["6%", "8%", "10%", "12%", "15%"], 
-        index=1
-    )
-    target_multiplier = {"6%": 1.06, "8%": 1.08, "10%": 1.10, "12%": 1.12, "15%": 1.15}[target_choice]
+# ======================= ENGINE =======================
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_symbols(universe):
+    r = requests.get(INDEX_URLS[universe], headers=UA, timeout=60)
+    r.raise_for_status()
+    d = pd.read_csv(io.StringIO(r.text))
+    return [s.strip() for s in d["Symbol"].astype(str)]
 
-with col2:
-    sl_choice = st.selectbox(
-        "🛡️ Select Stop Loss Logic:", 
-        ["Smart SL (Max -10%)", "Smart SL (Max -15%)", "Fixed -8%", "Fixed -10%"], 
-        index=1
-    )
 
-st.divider()
-
-if st.button(f"Start Backtest (~4-5 Mins)"):
-    status = st.empty()
-    progress = st.progress(0)
-    
+def _grab(tks):
     try:
-        tickers = get_all_nse()
-    except Exception as e:
-        st.error(f"Error reading NSE List: {e}")
-        st.stop()
-        
-    start_date = "2024-03-01"
-    end_date = datetime.datetime.today().strftime('%Y-%m-%d')
-    backtest_start = pd.to_datetime("2024-09-01")
-    
-    close_list, high_list, low_list, vol_list = [], [], [], []
-    chunk_size = 200
-    total_tickers = len(tickers)
-    total_batches = (total_tickers // chunk_size) + 1
-    
-    for i in range(0, total_tickers, chunk_size):
-        chunk = tickers[i:i + chunk_size]
-        current_batch = (i // chunk_size) + 1
-        status.text(f"Step 1/4: Downloading Data - Batch {current_batch} of {total_batches}...")
-        
-        try:
-            temp_data = yf.download(chunk, start=start_date, end=end_date, progress=False, threads=True)
-            if not temp_data.empty:
-                if len(chunk) == 1:
-                    close_list.append(temp_data[['Close']].rename(columns={'Close': chunk[0]}))
-                    high_list.append(temp_data[['High']].rename(columns={'High': chunk[0]}))
-                    low_list.append(temp_data[['Low']].rename(columns={'Low': chunk[0]}))
-                    vol_list.append(temp_data[['Volume']].rename(columns={'Volume': chunk[0]}))
-                else:
-                    close_list.append(temp_data['Close'])
-                    high_list.append(temp_data['High'])
-                    low_list.append(temp_data['Low'])
-                    vol_list.append(temp_data['Volume'])
-        except Exception:
-            pass
-        
-        progress.progress(min(0.3 * ((i + chunk_size) / total_tickers), 0.3))
-        time.sleep(0.5) 
-        
-    status.text("Step 2/4: Merging Data & Calculating True RS Matrix...")
-    progress.progress(0.35)
-    
-    if not close_list:
-        st.error("Data download failed. Check network or try again.")
-        st.stop()
-        
-    close_df = pd.concat(close_list, axis=1)
-    high_df = pd.concat(high_list, axis=1)
-    low_df = pd.concat(low_list, axis=1)
-    vol_df = pd.concat(vol_list, axis=1)
-    
-    progress.progress(0.4)
-    
-    roll_ret_63 = close_df.pct_change(periods=63)
-    rs_matrix = roll_ret_63.rank(axis=1, pct=True) * 100
+        df = yf.download(tks, period="5y", progress=False, threads=True, auto_adjust=True)
+    except Exception:
+        return None
+    if df is None or df.empty:
+        return None
+    if not isinstance(df.columns, pd.MultiIndex):
+        df.columns = pd.MultiIndex.from_product([list(df.columns), [tks[0]]])
+    return df
 
-    status.text("Step 3/4: Simulating Trades with Custom Settings...")
-    progress.progress(0.6)
-    
-    all_trades = []
-    valid_tickers = close_df.columns
-    total_ticks = len(valid_tickers)
-    
-    for idx, ticker in enumerate(valid_tickers):
-        if idx % 100 == 0:
-            status.text(f"Step 3/4: Simulating Trades... ({idx}/{total_ticks} Stocks Checked)")
-            
-        df = pd.DataFrame({
-            'Close': close_df[ticker],
-            'High': high_df[ticker],
-            'Low': low_df[ticker],
-            'Volume': vol_df[ticker],
-            'RS': rs_matrix[ticker]
-        }).dropna()
-        
-        if len(df) < 100:
-            continue
-            
-        df['SMA_20'] = df['Close'].rolling(20).mean()
-        df['SMA_50'] = df['Close'].rolling(50).mean()
-        df['SMA_200'] = df['Close'].rolling(200).mean()
-        df['Turnover'] = df['Close'] * df['Volume'].shift(1).rolling(20).mean()
-        
-        df['Prev_20D_High'] = df['High'].shift(1).rolling(20).max()
-        df['Prev_20D_Low'] = df['Low'].shift(1).rolling(20).min()
-        df['Recent_10D_Low'] = df['Low'].rolling(10).min()
-        
-        in_trade = False
-        entry_price = 0.0
-        entry_date = None
-        target_price = 0.0
-        sl_price = 0.0
-        initial_risk_pct = 0.0
-        
-        df_backtest = df[df.index >= backtest_start]
-        
-        for date, row in df_backtest.iterrows():
-            if not in_trade:
-                if row['Close'] > row['SMA_200'] and row['Turnover'] > 100000000:
-                    if row['RS'] >= 80 and row['SMA_20'] > row['SMA_50'] > row['SMA_200']:
-                        if row['Recent_10D_Low'] == row['Prev_20D_Low']:
-                            if row['High'] >= row['Prev_20D_High'] and row['Prev_20D_High'] > row['SMA_20']:
-                                in_trade = True
-                                entry_date = date
-                                entry_price = row['Prev_20D_High'] 
-                                
-                                # Set Target
-                                target_price = entry_price * target_multiplier
-                                
-                                # Set Stop Loss based on Dropdown Choice
-                                raw_20d_low = float(row['Prev_20D_Low'])
-                                
-                                if sl_choice == "Smart SL (Max -10%)":
-                                    sl_price = max(raw_20d_low, entry_price * 0.90)
-                                elif sl_choice == "Smart SL (Max -15%)":
-                                    sl_price = max(raw_20d_low, entry_price * 0.85)
-                                elif sl_choice == "Fixed -8%":
-                                    sl_price = entry_price * 0.92
-                                elif sl_choice == "Fixed -10%":
-                                    sl_price = entry_price * 0.90
-                                
-                                # Failsafe
-                                if sl_price >= entry_price:
-                                    sl_price = entry_price * 0.90
-                                    
-                                initial_risk_pct = ((sl_price - entry_price) / entry_price) * 100
 
-            else:
-                exit_price = 0.0
-                exit_date = date
-                trade_result = ""
-                
-                if row['Low'] <= sl_price:
-                    exit_price = sl_price
-                    trade_result = "🔴 Stop Loss"
-                elif row['High'] >= target_price:
-                    exit_price = target_price
-                    trade_result = "🟢 Target Hit"
-                
-                if trade_result != "":
-                    pnl_pct = ((exit_price - entry_price) / entry_price) * 100
-                    days_held = (exit_date - entry_date).days
-                    
-                    all_trades.append({
-                        "Stock": ticker.replace(".NS", ""),
-                        "Entry Date": entry_date.strftime('%Y-%m-%d'),
-                        "Entry Price": round(entry_price, 2),
-                        "Exit Date": exit_date.strftime('%Y-%m-%d'),
-                        "Exit Price": round(exit_price, 2),
-                        "Result": trade_result,
-                        "PnL %": round(pnl_pct, 2),
-                        "Initial Risk %": round(initial_risk_pct, 2),
-                        "Days Held": days_held
-                    })
-                    
-                    in_trade = False
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def download(symbols):
+    tickers = [s + ".NS" for s in symbols]
+    parts = []
+    for i in range(0, len(tickers), 100):
+        df = _grab(tickers[i:i + 100])
+        if df is not None:
+            parts.append(df)
+    got = set()
+    for p in parts:
+        cl = p["Close"]
+        got |= set(cl.columns[cl.notna().any()])
+    missing = [t for t in tickers if t not in got]
+    for i in range(0, len(missing), 25):
+        df = _grab(missing[i:i + 25])
+        if df is not None:
+            parts.append(df)
+    if not parts:
+        return None
+    full = pd.concat(parts, axis=1)
+    out = {}
+    for k in ["Open", "High", "Low", "Close"]:
+        x = full[k]
+        x = x.T.groupby(level=0).first().T
+        out[k] = x
+    good = out["Close"].columns[out["Close"].notna().sum() > 300]
+    for k in out:
+        out[k] = out[k][good]
+    cov = out["Close"].notna().mean(axis=1)
+    keep = cov[cov > 0.5].index
+    for k in out:
+        out[k] = out[k].loc[keep].sort_index()
+    return out
 
-    status.text("Step 4/4: Generating Backtest Report...")
-    progress.progress(1.0)
-    
-    if all_trades:
-        trades_df = pd.DataFrame(all_trades)
-        
-        total_trades = len(trades_df)
-        wins = len(trades_df[trades_df['Result'] == "🟢 Target Hit"])
-        win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
-        avg_days = trades_df['Days Held'].mean()
-        
-        st.success(f"✅ Backtest Completed Successfully!")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Trades", total_trades)
-        col2.metric("Win Rate", f"{win_rate:.2f}%")
-        col3.metric("Total Winners", wins)
-        col4.metric("Avg Days Held", f"{avg_days:.0f} Days")
-        
-        st.subheader("📜 Detailed Trade Log")
-        st.dataframe(trades_df.sort_values(by="Entry Date", ascending=False), use_container_width=True)
+
+def prepare(data, rs_thr, n_window, use50, use200):
+    O, H, L, C = data["Open"], data["High"], data["Low"], data["Close"]
+    idx = C.index
+
+    # RS 3M rating (universe ke andar), har hafte ke last din se agle hafte ke liye
+    ret63 = C.pct_change(63)
+    rs = ret63.rank(axis=1, pct=True) * 98 + 1
+    rs_week = rs.resample("W-FRI").last().shift(1).reindex(idx, method="bfill")
+    elig = (rs_week >= rs_thr).values
+    rsv = rs_week.fillna(0).values
+
+    # Trend filter (pichle din ke close ke hisaab se)
+    ok = pd.DataFrame(True, index=idx, columns=C.columns)
+    if use50:
+        ok = ok & (C > C.rolling(50).mean())
+    if use200:
+        ok = ok & (C > C.rolling(200).mean())
+    trend = ok.shift(1, fill_value=False).values
+
+    # 20D low setup
+    newlow = (L < L.rolling(20).min().shift(1)).values
+    T, S = newlow.shape
+    ar = np.arange(T)[:, None]
+    last_low = np.maximum.accumulate(np.where(newlow, ar, -1), axis=0)
+    ll_prev = np.vstack([np.full((1, S), -1), last_low[:-1]])
+    if n_window is None:
+        active = ll_prev >= 0
     else:
-        st.warning("No trades triggered under these strict rules in the selected timeframe.")
+        active = (ll_prev >= 0) & ((ar - 1 - ll_prev) <= n_window)
+
+    h20 = H.rolling(20).max().shift(1).values
+    l20 = L.rolling(20).min().shift(1).values
+    Ov, Hv, Lv, Cv = O.values, H.values, L.values, C.values
+    base = (elig & trend & active & (Hv >= h20)
+            & np.isfinite(h20) & np.isfinite(l20) & np.isfinite(Ov))
+    return {
+        "O": Ov, "H": Hv, "L": Lv, "C": Cv, "base": base, "h20": h20, "l20": l20,
+        "ll_prev": ll_prev, "rsv": rsv, "syms": [str(s).replace(".NS", "") for s in C.columns],
+        "dates": idx,
+    }
+
+
+def simulate(A, sl_mode, sl_pct, tgt_pct, max_pos, cost_pct, start_idx):
+    O, H, L, C = A["O"], A["H"], A["L"], A["C"]
+    base, h20, l20, ll_prev, rsv = A["base"], A["h20"], A["l20"], A["ll_prev"], A["rsv"]
+    syms, dates = A["syms"], A["dates"]
+    T, S = C.shape
+
+    in_pos = np.zeros(S, bool)
+    entry = np.full(S, np.nan)
+    sl = np.full(S, np.nan)
+    tgt = np.full(S, np.nan)
+    ent_i = np.zeros(S, int)
+    consumed = np.full(S, -1)
+    alloc = 1.0 / max_pos
+    cost = cost_pct / 100.0
+    state = {"realized": 0.0}
+    trades = []
+    n = T - start_idx
+    equity = np.ones(n)
+    expo = np.zeros(n)
+
+    def close_trade(s, d, px, result):
+        net = px / entry[s] - 1 - cost
+        state["realized"] += alloc * net
+        trades.append({
+            "Stock": syms[s],
+            "Entry Date": dates[ent_i[s]],
+            "Entry": round(entry[s], 2),
+            "SL": round(sl[s], 2),
+            "Target": round(tgt[s], 2) if np.isfinite(tgt[s]) else np.nan,
+            "Exit Date": dates[d],
+            "Exit": round(px, 2),
+            "Result": result,
+            "PnL %": round(net * 100, 2),
+            "Risk %": round((entry[s] - sl[s]) / entry[s] * 100, 2),
+            "Days": (dates[d] - dates[ent_i[s]]).days,
+        })
+        in_pos[s] = False
+
+    for d in range(start_idx, T):
+        o, h, l, c = O[d], H[d], L[d], C[d]
+
+        if in_pos.any():
+            sl_hit = in_pos & (l <= sl)
+            tg_hit = in_pos & ~sl_hit & (h >= tgt)
+            for s in np.flatnonzero(sl_hit):
+                px = o[s] if o[s] <= sl[s] else sl[s]
+                close_trade(s, d, px, "SL")
+            for s in np.flatnonzero(tg_hit):
+                px = o[s] if o[s] >= tgt[s] else tgt[s]
+                close_trade(s, d, px, "Target")
+
+        slots = max_pos - int(in_pos.sum())
+        if slots > 0:
+            cand = base[d] & ~in_pos & (ll_prev[d] > consumed)
+            ids = np.flatnonzero(cand)
+            if len(ids) > slots:
+                ids = ids[np.argsort(-rsv[d][ids])[:slots]]
+            for s in ids:
+                trig = h20[d, s]
+                ep = o[s] if o[s] >= trig else trig
+                if sl_mode == "20D":
+                    sl_s = l20[d, s]
+                elif sl_mode == "Fixed":
+                    sl_s = ep * (1 - sl_pct / 100.0)
+                else:
+                    sl_s = max(l20[d, s], ep * (1 - sl_pct / 100.0))
+                if sl_s >= ep:
+                    sl_s = ep * 0.9
+                consumed[s] = ll_prev[d, s]
+                entry[s] = ep
+                sl[s] = sl_s
+                tgt[s] = ep * (1 + tgt_pct / 100.0) if tgt_pct > 0 else np.inf
+                ent_i[s] = d
+                in_pos[s] = True
+                if l[s] <= sl_s:
+                    close_trade(s, d, sl_s, "SL")
+
+        mtm = 0.0
+        if in_pos.any():
+            ii = np.flatnonzero(in_pos)
+            cc = np.where(np.isnan(c[ii]), entry[ii], c[ii])
+            mtm = alloc * float(np.sum(cc / entry[ii] - 1))
+        equity[d - start_idx] = 1.0 + state["realized"] + mtm
+        expo[d - start_idx] = in_pos.sum() / max_pos
+
+    for s in np.flatnonzero(in_pos):
+        last = C[:, s]
+        last = last[~np.isnan(last)]
+        px = last[-1] if len(last) else entry[s]
+        trades.append({
+            "Stock": syms[s],
+            "Entry Date": dates[ent_i[s]],
+            "Entry": round(entry[s], 2),
+            "SL": round(sl[s], 2),
+            "Target": round(tgt[s], 2) if np.isfinite(tgt[s]) else np.nan,
+            "Exit Date": pd.NaT,
+            "Exit": round(px, 2),
+            "Result": "Open",
+            "PnL %": round((px / entry[s] - 1) * 100, 2),
+            "Risk %": round((entry[s] - sl[s]) / entry[s] * 100, 2),
+            "Days": (dates[-1] - dates[ent_i[s]]).days,
+        })
+
+    tr = pd.DataFrame(trades)
+    return tr, equity, expo
+
+
+def metrics(tr, equity, expo, dates, start_idx):
+    closed = tr[tr["Result"] != "Open"] if len(tr) else tr
+    n = len(closed)
+    out = {"Trades": n, "Open": int((tr["Result"] == "Open").sum()) if len(tr) else 0}
+    if n > 0:
+        wins = closed[closed["PnL %"] > 0]["PnL %"]
+        loss = closed[closed["PnL %"] <= 0]["PnL %"]
+        out["Win %"] = round(len(wins) / n * 100, 1)
+        out["Avg Win %"] = round(wins.mean(), 2) if len(wins) else 0.0
+        out["Avg Loss %"] = round(loss.mean(), 2) if len(loss) else 0.0
+        out["Expectancy %"] = round(closed["PnL %"].mean(), 2)
+        gl = -loss.sum()
+        out["Profit Factor"] = round(wins.sum() / gl, 2) if gl > 0 else np.nan
+        out["Avg Days"] = round(closed["Days"].mean(), 0)
+    else:
+        for k in ["Win %", "Avg Win %", "Avg Loss %", "Expectancy %", "Profit Factor", "Avg Days"]:
+            out[k] = np.nan
+    out["Return %"] = round((equity[-1] - 1) * 100, 1)
+    yrs = max((dates[-1] - dates[start_idx]).days / 365.25, 0.1)
+    out["CAGR %"] = round((equity[-1] ** (1 / yrs) - 1) * 100, 1) if equity[-1] > 0 else np.nan
+    peak = np.maximum.accumulate(equity)
+    out["Max DD %"] = round(float((equity / peak - 1).min() * 100), 1)
+    out["Exposure %"] = round(float(expo.mean() * 100), 0)
+    return out
+
+
+def parse_nums(s):
+    out = []
+    for part in s.replace(" ", "").split(","):
+        if part:
+            try:
+                out.append(float(part))
+            except ValueError:
+                pass
+    return sorted(set(out))
+
+
+# ======================= UI =======================
+with st.expander("📜 Rules aur assumptions (ek baar padh lo)"):
+    st.markdown(
+        """
+**Strategy ke rules**
+- Universe: jo chuno (Nifty 500 etc). RS 3M rating us universe ke andar nikalti hai.
+- **Har hafte** Friday close par RS banta hai, aur wahi list **agle poore hafte** ke liye eligible hoti hai.
+- Price pichle din ke close par 50 DMA aur 200 DMA ke upar ho (checkbox se on/off).
+- Stock ne pichle N din ke andar naya **20D low** banaya ho (N slider se, ya "koi limit nahi"). Tab GTT track hota hai. GTT **pichle 20 din ke high** par rehta hai, aur high roz update hota hai.
+- Jis din high us level ko touch kare, usi level par buy. Agar gap-up khule, to **open price par** buy (asli fill jaisa).
+- Ek 20D low par ek hi trade. Dobara trade ke liye naya 20D low chahiye.
+- Stop loss: 20D low, ya entry se fixed %, ya dono me se jo paas ho (Smart). Target %: jo likhoge.
+- Holding ka koi time limit nahi. Exit sirf SL ya Target par.
+- Ek saath max trades tak. Jyada signals aaye to **sabse high RS** wale lete hain. Har trade ko capital ka barabar hissa milta hai.
+
+**Honest assumptions (result ko zyada achha dikhne se bachane ke liye)**
+- Ek hi din SL aur Target dono touch ho jayein to **SL pehle** maana jata hai.
+- Entry wale din agar low SL ko touch kare, to usi din SL hit maana jata hai. Entry wale din Target nahi gina jata.
+- Gap-down SL ke neeche khule to exit **open price** par hota hai, SL par nahi.
+- Cost + slippage har trade se kata jata hai.
+- Sirf **aaj ke index members** liye hain, to survivorship bias hai (jo stocks index se nikal gaye wo nahi hain). Asli result thoda kam ho sakta hai.
+- Prices Yahoo se split/dividend adjusted hain.
+"""
+    )
+
+c1, c2 = st.columns(2)
+universe = c1.selectbox("Universe", ["Nifty 500", "Nifty Total Market", "Nifty 100", "Nifty 50"], index=0)
+years = c2.selectbox("Backtest period", [1, 2, 3, 4], index=2, format_func=lambda x: f"Last {x} year")
+
+c3, c4 = st.columns(2)
+rs_thr = c3.slider("Weekly RS 3M (min)", 50, 99, 80)
+n_window = c4.slider("20D low kitne din ke andar bana ho (max)", 3, 60, 10)
+no_limit = st.checkbox("Koi limit nahi (pehle kabhi bhi 20D low bana ho)", False)
+
+c5, c6 = st.columns(2)
+use50 = c5.checkbox("Price > 50 DMA", True)
+use200 = c6.checkbox("Price > 200 DMA", True)
+
+c7, c8 = st.columns(2)
+max_pos = int(c7.number_input("Ek saath max trades", 1, 50, 10))
+cost_pct = float(c8.number_input("Cost + slippage per trade (%)", 0.0, 3.0, 0.2, 0.05))
+
+st.subheader("Stop Loss options")
+sl_modes = st.multiselect(
+    "Kaunse SL compare karne hain",
+    ["20D Low", "Fixed %", "Smart (20D Low, max risk %)"],
+    default=["20D Low", "Fixed %"],
+)
+sl_text = st.text_input("SL % values (Fixed aur Smart ke liye, comma se alag)", "10,15")
+
+st.subheader("Target options")
+tgt_text = st.text_input("Target % values (0 likhoge to target nahi, sirf SL)", "6,8,10,15")
+
+if st.button("▶️ Run Backtest", type="primary"):
+    sl_vals = parse_nums(sl_text)
+    tgt_vals = parse_nums(tgt_text)
+    configs = []
+    if "20D Low" in sl_modes:
+        configs.append(("20D", 0.0, "20D Low"))
+    for p in sl_vals:
+        if "Fixed %" in sl_modes:
+            configs.append(("Fixed", p, f"Fixed {p:g}%"))
+        if "Smart (20D Low, max risk %)" in sl_modes:
+            configs.append(("Smart", p, f"Smart {p:g}%"))
+    if not configs or not tgt_vals:
+        st.error("Kam se kam ek SL option aur ek target value daalo.")
+        st.stop()
+    if len(configs) * len(tgt_vals) > 40:
+        st.error("Ek baar me 40 se zyada combinations nahi. SL ya target kam karo.")
+        st.stop()
+
+    with st.spinner("Data download ho raha hai (pehli baar 1-3 min, phir cache me rehta hai)..."):
+        try:
+            symbols = get_symbols(universe)
+            data = download(tuple(symbols))
+        except Exception as e:
+            st.error(f"Data nahi aaya: {e}")
+            st.stop()
+    if data is None or data["Close"].shape[1] < 5:
+        st.error("Yahoo se data nahi aaya. Thodi der baad dobara try karo.")
+        st.stop()
+
+    A = prepare(data, rs_thr, None if no_limit else n_window, use50, use200)
+    dates = A["dates"]
+    start_idx = int(dates.searchsorted(dates[-1] - pd.DateOffset(years=years)))
+    start_idx = max(start_idx, 200)
+
+    rows, details = [], {}
+    prog = st.progress(0.0)
+    total = len(configs) * len(tgt_vals)
+    k = 0
+    for mode, p, sl_label in configs:
+        for t in tgt_vals:
+            tr, eq, ex = simulate(A, mode, p, t, max_pos, cost_pct, start_idx)
+            m = metrics(tr, eq, ex, dates, start_idx)
+            tl = "No target" if t <= 0 else f"{t:g}%"
+            row = {"SL": sl_label, "Target": tl}
+            row.update(m)
+            rows.append(row)
+            label = f"SL {sl_label} | Target {tl}"
+            details[label] = (tr, pd.Series((eq - 1) * 100, index=dates[start_idx:]))
+            k += 1
+            prog.progress(k / total)
+    prog.empty()
+
+    table = pd.DataFrame(rows).sort_values("Return %", ascending=False).reset_index(drop=True)
+    st.session_state["bt"] = {
+        "table": table,
+        "details": details,
+        "meta": f"{universe} | {len(A['syms'])} stocks | {dates[start_idx].date()} se {dates[-1].date()} | RS >= {rs_thr} | max {max_pos} trades",
+    }
+
+bt = st.session_state.get("bt")
+if bt:
+    st.divider()
+    st.success(bt["meta"])
+    st.subheader("📊 Comparison (Return % ke hisaab se sorted)")
+    st.dataframe(bt["table"], use_container_width=True, hide_index=True)
+    st.caption(
+        "Return % = poore capital par net return. Win %, Expectancy aur Profit Factor sirf band hue trades ke hain. "
+        "Open = abhi tak khule trades (unka profit/loss Return % me shamil hai)."
+    )
+
+    st.subheader("🔍 Kisi ek combination ki detail")
+    pick = st.selectbox("Combination chuno", list(bt["details"].keys()))
+    tr, eq = bt["details"][pick]
+    st.write("**Portfolio return % (time ke saath)**")
+    st.line_chart(eq)
+    if len(tr):
+        show = tr.copy()
+        show["Entry Date"] = pd.to_datetime(show["Entry Date"]).dt.strftime("%Y-%m-%d")
+        show["Exit Date"] = pd.to_datetime(show["Exit Date"]).dt.strftime("%Y-%m-%d")
+        show = show.sort_values("Entry Date", ascending=False)
+        st.write(f"**Trade log ({len(show)} trades)**")
+        st.dataframe(show, use_container_width=True, hide_index=True, height=500)
+        st.download_button("⬇️ Trade log CSV", show.to_csv(index=False), "trades.csv")
+    else:
+        st.info("Is combination me koi trade nahi bana.")
