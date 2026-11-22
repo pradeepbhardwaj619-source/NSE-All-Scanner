@@ -134,6 +134,10 @@ def main():
             avg20 = v.iloc[-21:-1].mean()
             high20 = float(d["High"].iloc[-20:].max())
             prev_high20 = float(d["High"].iloc[-21:-1].max())
+            low20 = float(d["Low"].iloc[-20:].min())
+            lowser = d["Low"]
+            nl_pos = np.flatnonzero((lowser < lowser.rolling(20).min().shift(1)).values)
+            days_since_low = float(len(lowser) - 1 - nl_pos[-1]) if len(nl_pos) else np.nan
 
             def ret3m(k):
                 n = 63
@@ -152,6 +156,9 @@ def main():
                 "High20D": round(high20, 2),
                 "DistBO": round((high20 / price - 1) * 100, 2),
                 "BreakLevel": round(prev_high20, 2),
+                "Low20D": round(low20, 2),
+                "DaysSinceLow": days_since_low,
+                "SwingRisk": round((high20 - low20) / high20 * 100, 2),
                 "Brk": int(price > prev_high20),
                 "VolRatio": float(v.iloc[-1] / avg20) if avg20 > 0 else np.nan,
                 "Turnover(Cr)": float(price * v.tail(20).mean() / 1e7),
