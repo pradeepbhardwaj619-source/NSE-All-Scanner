@@ -56,6 +56,8 @@ bo_mode = sb.selectbox(
     ["All", "Breakout + Near", "Only Breakout", "Only Near"],
 )
 bo_dist = sb.slider("Near = max distance to 20D high (%)", 1, 20, 5)
+low_on = sb.checkbox("Pehle 20D low bana ho (look back)", False)
+low_days = sb.slider("20D low kitne din ke andar bana (max)", 1, 60, 10)
 
 sb.subheader("Volume")
 vol_min = sb.number_input("Volume / 20D avg (min x)", 0.0, 50.0, 0.0, 0.1)
@@ -129,6 +131,12 @@ if "Brk" in f.columns:
 elif bo_mode != "All":
     st.warning("Breakout data abhi nahi bana. GitHub Actions me Update Data dobara run karo.")
 
+if low_on:
+    if "DaysSinceLow" in f.columns:
+        f = f[f["DaysSinceLow"] <= low_days]
+    else:
+        st.warning("20D low data abhi nahi bana. GitHub Actions me Update Data dobara run karo.")
+
 if vol_min > 0:
     f = f[f["VolRatio"] >= vol_min]
 
@@ -150,13 +158,17 @@ cols = ["Stock"] + (["Series"] if "Series" in f.columns else []) + ["Price"]
 if "Brk" in f.columns:
     f["Setup"] = np.where(f["Brk"] == 1, "Breakout", np.where(f["DistBO"] <= bo_dist, "Near", "-"))
     cols += ["High20D", "DistBO", "BreakLevel", "Setup"]
+for extra in ["DaysSinceLow", "Low20D", "SwingRisk"]:
+    if extra in f.columns:
+        cols.append(extra)
 cols += [rs_col]
 if has_prev:
     cols += [prev_col, "RS Chg", "RS Trend"]
 cols += ["MCap(Cr)", "Turnover(Cr)", "VolRatio", "RSI_D", "RSI_W", "RSI_M"]
 cols += [f"EMA{p}_{tf}" for tf, ps in EMA_PERIODS.items() for p in ps]
 
-rename = {rs_col: "RS 3M", "VolRatio": "Vol x", "DistBO": "Dist to 20D High %", "BreakLevel": "Prev 20D High"}
+rename = {rs_col: "RS 3M", "VolRatio": "Vol x", "DistBO": "Dist to 20D High %", "BreakLevel": "Prev 20D High",
+          "DaysSinceLow": "Days since 20D Low", "Low20D": "20D Low (SL)", "SwingRisk": "Risk to 20D Low %"}
 if has_prev:
     rename[prev_col] = "RS Prev"
 show = f[cols].rename(columns=rename)
@@ -168,5 +180,6 @@ st.dataframe(show, use_container_width=True, height=700, hide_index=True)
 st.download_button("⬇️ CSV download", show.to_csv(index=False), "scan.csv")
 st.caption(f"RS Prev = {cmp_label} ka RS rating. RS Chg = RS 3M minus RS Prev (jaise 60 se 80 = +20, Rising).")
 st.caption("20D High = last 20 candles (aaj ki candle ke saath) ka sabse high, TradingView ke 20 period Donchian upper jaisa. Dist to 20D High % = price us high se kitna neeche hai (0 = high par).")
+st.caption("Days since 20D Low = pichli baar kitne din pehle stock ne naya 20D low banaya (0 = aaj). 20D Low (SL) = last 20 din ka sabse low. Risk to 20D Low % = 20D High par entry aur 20D Low par SL ka gap.")
 st.caption("Prev 20D High = aaj ko chhod ke pichle 20 din ka high (breakout level). Setup = Breakout jab price ne is level ko paar kiya, Near jab breakout nahi hua par 20D High ke paas hai.")
 st.caption("EMA columns = price EMA se kitne % door hai (+ matlab EMA ke upar). Market cap sirf top 1500 liquid stocks ka hai. Nayi listing (3 mahine se kam) ka RS nahi banta.")
