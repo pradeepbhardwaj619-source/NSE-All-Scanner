@@ -36,8 +36,11 @@ def load_sector_map():
 def primary_sector(smap):
     """Har stock ka 'sahi' sector: core sector index pehle, phir sabse chhota (specific) index."""
     t = smap.copy()
+    if "Tier" not in t.columns:
+        t["Tier"] = 5
     t["Size"] = t["Index"].map(t.groupby("Index")["Symbol"].nunique())
-    t = t.sort_values(["Core", "Size", "Index"], ascending=[False, True, True]).drop_duplicates("Symbol")
+    t = t.sort_values(["Core", "Tier", "Size", "Index"],
+                      ascending=[False, True, True, True]).drop_duplicates("Symbol")
     return t.set_index("Symbol")["Group"].to_dict(), t.set_index("Symbol")["Index"].to_dict()
 
 
